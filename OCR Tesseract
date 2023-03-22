@@ -1,0 +1,121 @@
+# OCR (Optical Character Recognition)
+
+
+설치 : 
+https://github.com/UB-Mannheim/tesseract/wiki
+
+깃허브 :
+https://github.com/tesseract-ocr/
+
+설치 후 data update : 
+https://github.com/tesseract-ocr/tessdata
+
+메뉴얼 :
+https://github.com/tesseract-ocr/tesseract/blob/main/doc/tesseract.1.asc
+
+from PIL import Image
+import pytesseract
+import cv2
+import os
+import matplotlib.pyplot as plt
+
+# tesseract 실행파일 지정
+# Path 가 지정되어 있다면 굳이 필요 없다!
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+pytesseract.get_tesseract_version()
+
+# 현재 설정된  OCR 언어
+pytesseract.get_languages()
+
+base_path = r'D:\DevRoot\dataset\ComputerVision\receipt'
+out_path = r'D:\DevRoot\dataset\ComputerVision\out'
+
+imgfile = Image.open(os.path.join(base_path, 'image.png'))   # 리턴값은 Pillow Image 객체
+
+imgfile.size
+
+imgfile
+
+text = pytesseract.image_to_string(imgfile)
+
+print(text)
+
+imgfile2 = Image.open(os.path.join(base_path, "image2.png"))
+imgfile2
+
+print(pytesseract.image_to_string(imgfile2))   # 한글 인식이 안된다!?
+
+# lang 옵션을 주어야 한다 (get_languages() 에서 확인한 값으로.)
+text2 = pytesseract.image_to_string(imgfile2, lang='kor')
+print(text2)
+
+## OpenCV 로부터 읽어와서 OCR 하기
+
+img2 = cv2.imread(os.path.join(base_path, 'image2.png'))  # 리턴값은 array
+
+img2.shape
+
+print(pytesseract.image_to_string(img2, lang='kor'))
+
+imgbox = pytesseract.image_to_boxes(img2, lang='kor')
+print(imgbox)
+
+# 결과는 str 이다!
+
+imgH, imgW, _ = img2.shape
+
+img_temp = img2.copy()
+
+for boxes in imgbox.splitlines():
+    boxes = boxes.split(' ')
+    x, y, w, h = int(boxes[1]), int(boxes[2]), int(boxes[3]), int(boxes[4])
+    
+    cv2.rectangle(img_temp, (x, imgH - y), (w, imgH - h), (0, 0, 255), 1)
+
+plt.figure(figsize=(10, 20))
+plt.imshow(cv2.cvtColor(img_temp, cv2.COLOR_BGR2RGB))
+
+### config 옵션들
+
+참조: https://github.com/tesseract-ocr/tesseract/blob/main/doc/tesseract.1.asc
+
+**--*psm N***
+
+Set Tesseract to only run a subset of layout analysis and assume a certain form of image. The options for N are:
+
+```
+0 = Orientation and script detection (OSD) only.
+1 = Automatic page segmentation with OSD.
+2 = Automatic page segmentation, but no OSD, or OCR. (not implemented)
+3 = Fully automatic page segmentation, but no OSD. (Default)
+4 = Assume a single column of text of variable sizes.
+5 = Assume a single uniform block of vertically aligned text.
+6 = Assume a single uniform block of text.
+7 = Treat the image as a single text line.
+8 = Treat the image as a single word.
+9 = Treat the image as a single word in a circle.
+10 = Treat the image as a single character.
+11 = Sparse text. Find as much text as possible in no particular order.
+12 = Sparse text with OSD.
+13 = Raw line. Treat the image as a single text line,
+     bypassing hacks that are Tesseract-specific.
+```     
+
+
+**--*oem N***
+
+Specify OCR Engine mode. The options for N are:
+
+```
+0 = Original Tesseract only.
+1 = Neural nets LSTM only.
+2 = Tesseract + LSTM.
+3 = Default, based on what is available.
+```
+
+print(pytesseract.image_to_string(
+    img2,
+    lang='kor',
+    config='--psm 3 --oem 3'   # 기본 default 동작
+))
