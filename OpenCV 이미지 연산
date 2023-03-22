@@ -1,0 +1,357 @@
+# 이미지 연산
+Image Operation
+
+import os
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+
+base_path = r'D:\DevRoot\dataset\ComputerVision\01'
+
+# ↓ Google Colab 에서 
+# from google.colab.patches import cv2_imshow  # 이미지를 보여줄 경우 필요
+# from google.colab import files # 파일을 업로드 할때 필요
+
+def cv2_imshow(image):
+    cv2.imshow('image', image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
+def plt_imshow_bgr(bgr_img):
+    cvtImg = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
+    plt.imshow(cvtImg)
+    plt.show()
+
+# 이미지 연산 (Image Operation)
+
+- 이미지는 배열(array)로 표현되기에, 여러가지 연산 가능
+
+tree = cv2.imread(os.path.join(base_path, 'tree.jpg'))
+
+tree.shape
+
+plt_imshow_bgr(tree)
+
+## Pixel Value
+
+# 특정 pixel 값
+tree[200, 200]   # [B, G, R]
+
+# 특정 pixel 의 특정 channel 값
+tree[200, 200, 2]  # R channel
+
+## 값 변경
+
+tree[100, 100] = [0, 0, 255]  # 빨간색
+
+tree[101, 100] = [0, 0, 255]
+tree[102, 100] = [0, 0, 255]
+tree[103, 100] = [0, 0, 255]
+tree[104, 100] = [0, 0, 255]
+
+cv2_imshow(tree)
+
+
+
+## 슬라이싱, 인덱싱
+
+tree[:100, :100].shape
+
+plt_imshow_bgr(tree[:100, :100])
+
+white_box = tree[:100, :100]
+
+white_box = [255, 255, 255]  # 위 (100, 100) 영역이 죄다 [255, 255, 255] 값으로 바뀜
+
+tree[:100, :100] = white_box   #  실제 원본 (tree) 에 덮어 씌우기
+
+plt_imshow_bgr(tree)
+
+## 이미지 ROI
+
+- 이미지 작업시에는 특정 pixel단위 보다는 특정 영역단위로 작업을 하게 되는데 이것을 **ROI** (Region of Interest, Region Of Image)라고 함
+  
+- ROI 설정은 Numpy의 indexing 을 사용
+  
+  - 특정 영역을 copy 할 수도 있음
+
+# 다시 원본
+tree = cv2.imread(os.path.join(base_path, 'tree.jpg'))
+
+plt_imshow_bgr(tree)
+
+# 나무만 가져오기
+t = tree[190:240, 290:350]
+
+plt_imshow_bgr(t)
+
+# 위 나무를 원본의 특정위치에 넣어보기
+
+tree[130:180, 310:370] = t
+
+plt_imshow_bgr(tree)
+
+tree[200:250, 210:270] = t
+
+plt_imshow_bgr(tree)
+
+## 이미지의 Channels
+
+- B, G, R로 구성된 채널을 분리, 합칠 수 있음
+
+  - `cv2.split()`
+
+  - `cv2.merge()`
+
+tree.shape
+
+b, g, r = cv2.split(tree)  # 각 channel 로 분리
+
+b.shape
+
+g.shape
+
+# 3개 channel 합치기
+img = cv2.merge((b, g, r))
+
+plt_imshow_bgr(img)
+
+- `cv2.split()` 함수는 비용이 많이 드는 함수이므로, 가능하다면 **Numpy indexing**을 사용하는 효율적!
+
+# red channel
+img[:, :, 2]
+
+# 특정 channel 값만 변경하기
+img[:, :, 2] = 0
+
+img
+
+plt_imshow_bgr(img)
+
+img[:, :, 1] = 255
+
+plt_imshow_bgr(img)
+
+## 이미지 더하기
+- `cv2.add()`
+
+- `cv2.addWeighted()`
+
+- `Numpy` 더하기 연산
+
+- (참고) 
+  - `cv2.add()` 는 'Saturation 연산' 을 한다 
+    - `Saturation` 연산은 '한계값'을 정하고 그 값을 벗어나는 경우는 모두 특정 값으로 계산하는 방식
+
+    - 이미지에서는 0이하는 모두 0, 255이상은 모두 255로 표현
+  
+  - `Numpy` : 'modulo 연산'
+    - a와 b는 n으로 나눈 나머지 값이 같다라는 의미
+
+    - 이미지에서는 연산의 결과가 256보다 큰 경우는 256으로 나눈 나머지 값으로 결정
+
+x = np.uint8([250])
+y = np.uint8([10])
+
+x
+
+y
+
+- `cv2.add()` 연산
+
+cv2.add(x, y)
+
+# 250 + 10 => 255  <-- saturation 연산!
+
+# 반면 numpy 연산
+
+x + y   # 250 + 10 => 4   <--- modulo 연산!
+
+dog1 = cv2.imread(os.path.join(base_path, 'dog1.jpg'), cv2.IMREAD_COLOR)
+dog2 = cv2.imread(os.path.join(base_path, 'dog2.jpg'), cv2.IMREAD_COLOR)
+
+dog1.shape
+
+dog2.shape
+
+plt_imshow_bgr(dog1)
+
+plt_imshow_bgr(dog2)
+
+# cv2.add()
+result1 = cv2.add(dog1, dog2)
+plt_imshow_bgr(result1)
+
+# numpy 연산
+result2 = dog1 + dog2
+
+plt_imshow_bgr(result2)
+
+## 비트 연산
+- AND, OR, NOT, XOR 연산
+  - `bitwise_and` : 둘다 0이 아닌 경우만 값을 통과
+
+  - `bitwise_or` : 둘중 하나가 0이 아니면 값을 통과
+
+  - `bitwise_not` : 해당 값에 대해 부정값을 통과
+
+  - `bitwise_xor` : 두 요소의 논리적 배타값 통과
+
+
+star = cv2.imread(os.path.join(base_path, 'star.jpg'))
+
+plt_imshow_bgr(star)
+
+star.shape
+
+black_img = np.zeros(star.shape, np.uint8)
+
+plt_imshow_bgr(black_img)
+
+# 위에서 1/2 만 white 로 만들기
+
+black_img[:, :2560, :] = (255, 255, 255)
+
+plt_imshow_bgr(black_img)
+
+img = black_img.copy()
+
+result = cv2.bitwise_and(img, star)
+
+plt_imshow_bgr(result)
+
+result2 = cv2.bitwise_or(img, star)
+
+plt_imshow_bgr(result2)
+
+result3 = cv2.bitwise_not(img)
+
+plt_imshow_bgr(result3)
+
+result4 = cv2.bitwise_not(star)
+
+plt_imshow_bgr(result4)
+
+result5 = cv2.bitwise_xor(star, img)
+
+plt_imshow_bgr(result5)
+
+## 비트연산 활용
+- Lenna 이미지에 OpenCV 로고 넣기
+
+logo = cv2.imread(os.path.join(base_path, 'opencv_logo.jpg'))
+logo.shape
+
+plt_imshow_bgr(logo)
+
+lenna = cv2.imread(os.path.join(base_path, 'Lenna.png'))
+lenna.shape
+
+plt_imshow_bgr(lenna)
+
+rows, cols, channel = lenna.shape
+
+logo = logo[:rows, :cols]  # lennna 의 크기만큼 logo 에서 slicing 하기
+
+logo.shape
+
+- mask를 만들기 위해서 logo 이미지를 gray scale로 변경후 binary image로 전환
+
+- mask는 logo부분이 흰색(255), 바탕은 검은색(0)
+
+- mask_inv는 logo부분이 검은색(0), 바탕은 흰색(255)
+
+logo_gray = cv2.cvtColor(logo, cv2.COLOR_BGR2GRAY)
+
+plt.imshow(logo_gray, cmap='gray')
+plt.show()
+
+ret, mask = cv2.threshold(
+    src=logo_gray,
+    thresh=200,     # 200보다 넘는 값들 (임계값)
+    maxval=255,     # 255로 만들기
+    type=cv2.THRESH_BINARY_INV,
+)
+
+mask
+
+plt.imshow(mask, cmap='gray')
+plt.show()
+
+mask_inv = cv2.bitwise_not(mask)
+
+plt.imshow(mask_inv, cmap='gray')
+plt.show()
+
+img1_fg = cv2.bitwise_and(logo, logo, mask=mask)
+img2_bg = cv2.bitwise_and(lenna, lenna, mask=mask_inv)
+
+plt_imshow_bgr(img1_fg)
+
+plt_imshow_bgr(img2_bg)
+
+dst = cv2.add(img1_fg, img2_bg)
+
+plt_imshow_bgr(dst)
+
+## Image Blending
+- `cv2.addWeighted()` 사용하여 두 이미지를 blending 할 수 있음
+
+- blending 하려는 두 이미지의 사이즈가 같아야함!
+
+- [Simple Formula]  
+  # $\quad g(x) = (1 - \alpha) f_0(x) + \alpha f_1(x)$
+
+  <br>
+
+  - $\beta = 1 - \alpha$
+
+  -  $\alpha, \beta $ 의 값을 통해 어떤 이미지를 더 강하게 드러내고, 어떤 이미지를 더 약하게 드러낼지 결정
+
+  - $\gamma$ 추가 가능 (optional)
+
+
+img1 = cv2.imread(os.path.join(base_path, 'fashion.jpg'))
+img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
+print(img1.shape) 
+# (640, 640, 3)
+
+img2 = cv2.imread(os.path.join(base_path, 'do-not-copy.jpg'))
+img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
+print(img2.shape)
+# (1142, 1140, 3)
+
+img1 = cv2.resize(img1, (640, 640))
+img2 = cv2.resize(img2, (640, 640))
+
+print(img1.shape)
+print(img2.shape)
+
+plt.imshow(img1)
+plt.show()
+
+plt.imshow(img2)
+plt.show()
+
+blended = cv2.addWeighted(
+            src1 = img1,
+            alpha = 0.5,  # src1 의 강도
+            src2 = img2,
+            beta = 0.5,  # src2 의 강도
+            gamma = 0,
+)
+
+plt.imshow(blended)
+plt.show()
+
+blended2 = cv2.addWeighted(
+            src1 = img1,
+            alpha = 0.8,  # src1 의 강도
+            src2 = img2,
+            beta = 0.1,  # src2 의 강도
+            gamma = 0,
+)
+
+plt.imshow(blended2)
+plt.show()
