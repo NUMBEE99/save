@@ -1,0 +1,202 @@
+## n-gram 유사도
+n-gram 은 주어진 문장에서 n개의 연속적인 단어 시퀀스(단어 나열)을 의미
+
+
+
+### 2-gram (bi-gram) 유사도 계산
+
+from konlpy.tag import Komoran
+
+sentence1 = '6월에 뉴턴은 선생님의 제안으로 트리니티에 입학하였다'
+sentence2 = '6월에 뉴턴은 선생님의 제안으로 대학교에 입학하였다'
+sentence3 = '나는 맛잇는 밥을 뉴턴 선생님과 함께 먹었습니다.'
+
+komoran = Komoran()
+bow1 = komoran.nouns(sentence1)
+bow2 = komoran.nouns(sentence2)
+bow3 = komoran.nouns(sentence3)
+
+bow1
+
+bow2
+
+bow3
+
+# 어절 단위 n-gram
+def word_ngram(bow, num_gram):
+    text = tuple(bow)
+    ngrams = [text[x: x + num_gram]  for x in range(0, len(text))]
+    return tuple(ngrams)
+
+
+# 음절 n-gram 분석
+def phoneme_ngram(bow, num_gram):
+    sentence = ' '.join(bow)
+    text = tuple(sentence)
+    slen = len(text)
+    ngrams = [text[x: x + num_gram] for x in range(0, slen)]
+    return ngrams
+
+
+
+
+word_ngram(bow1, 3)
+
+print(bow1)
+phoneme_ngram(bow1, 4)
+
+doc1 = word_ngram(bow1, 2)
+doc2 = word_ngram(bow2, 2)
+doc3 = word_ngram(bow3, 2)
+
+doc1
+
+doc2
+
+doc3
+
+# 유사도 계산
+def similarity(doc1, doc2):
+    cnt = 0   # 동일 tuple 의 개수
+    
+    for token in doc1:
+        if token in doc2:
+            cnt += 1
+    
+    return cnt / len(doc1)
+
+r1 = similarity(doc1, doc2)
+r2 = similarity(doc3, doc1)
+
+
+print(doc1)
+print(doc2)
+print(doc3)
+print(r1)
+print(r2)
+
+
+# 코사인 유사도
+
+코사인 값은 -1 ~ +1 이며 
+
+- 두 벡터의 방향이 완전히 동일한 경우에는 1   (유사해질수록 1에 가깝다)
+- 반대 방향이면 -1,
+- 서로 직각이면 0
+
+
+> A : 6월에 뉴턴은 선생님의 제안으로 트리니티에 입학했다
+
+> B : 6월에 뉴턴은 선생님의 제안으로 대학교에 입학했다
+
+##### 단어문서행렬 (TDM)
+Text-Document Matrix
+
+문장 A, B 에서 단어토큰(명상) 만 추출하여 단어 문서 행렬 표현
+
+
+문장A 와 문장B 에 대한 벡터를 다음과 같이 표현해볼수 있다
+
+A = [1, 1, 1, 1, 1, 1, 0]
+
+B = [1, 1, 1, 1, 0, 1, 1]
+
+**코사인 유사도 수식의 분자 계산**
+
+두 벡터의 내적계산
+
+
+
+**코사인 유사도 수식의 분모 계산**
+
+두 벡터의 크기의 곱
+
+
+# 두 벡터의 내적은 5
+# 두 벡터의 크기의 곱은 6
+# 코사인 각도 값은 0.83  => 두 문장의 코사인 유사도는 83% 
+
+
+# 코사인 유사도 계산
+
+import numpy as np
+from numpy import dot  # 벡터 내적 계산
+from numpy.linalg import norm # norm: 벡터의 크기를 나타내는 수학용어.  대학수학회 표준발음 '노름'
+
+print(bow1)
+print(bow2)
+print(bow3)
+
+# 단어 묶음 하나로 합침
+bow = bow1 + bow2 + bow3
+
+bow
+
+# 위 단어묶음에서 중복 제거해서 '단어 사전' 구축
+word_dics = []
+for token in bow:
+    if token not in word_dics:
+        word_dics.append(token)
+
+word_dics
+
+#### 단어 문서 행렬 TDM
+Term-Document Matrix
+
+# TDM 만들기
+def make_term_doc_mat(sentence_bow, word_dics):
+    freq_mat = {}
+    
+    for word in word_dics:
+        freq_mat[word] = 0
+        
+    for word in word_dics:
+        if word in sentence_bow:
+            freq_mat[word] += 1
+            
+    return freq_mat
+
+make_term_doc_mat(bow1, word_dics)
+
+# 문장 별 단어 문서 행렬 계산
+freq_list1 = make_term_doc_mat(bow1, word_dics)
+freq_list2 = make_term_doc_mat(bow2, word_dics)
+freq_list3 = make_term_doc_mat(bow3, word_dics)
+print(freq_list1)
+print(freq_list2)
+print(freq_list3)
+
+
+#### cos 유사도 계산
+
+# 단어 벡터 만들기
+def make_vector(tdm):
+    vec = []
+    for key in tdm:
+        vec.append(tdm[key])
+    return vec
+
+make_vector(freq_list1)
+
+# 코사인 유사도 계산
+def cos_sim(vec1, vec2):
+    return dot(vec1, vec2) / (norm(vec1) * norm(vec2))
+
+doc1 = np.array(make_vector(freq_list1))
+doc2 = np.array(make_vector(freq_list2))
+doc3 = np.array(make_vector(freq_list3))
+
+r1 = cos_sim(doc1, doc2)
+r2 = cos_sim(doc3, doc1)
+
+print(r1)
+print(r2)
+
+
+
+## 마무리
+자연어 처리를 위한 절차
+
+1. 토크나이징: 최소한의 의미를 가지는 단어들로 토큰화 . 어휘소분석등 필요
+2. 임베딩 :  벡터형태로 수치화
+3. 문장간 유사도 계산
