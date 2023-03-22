@@ -1,0 +1,588 @@
+# 순환신경망(RNN) 으로 IMDB 리뷰 분류하기
+
+"""
+대표적인 RNN 문제인 IMDB 영화 리뷰 테이터 셋을 사용해 간단한 RNN 모델을 훈련해 보겠습니다
+
+이 데이터셋은 두가지 방법으로 변형하여 순환 신경망에 주입해 봅니다.
+
+첫째: One-hot encoding 
+둘째: 단어 임베딩(Word Embedding)
+
+"""
+
+
+# IMDB 리뷰 데이터셋
+- imdb.com 에서 수집한 리뷰를 감상평에 따라 '긍정' 과 '부정' 으로 분류해 놓은 데이터 셋
+- 총 50,000개의 샘플
+- 훈련데이터:테스트데이터 => 25,000개:25,000개
+
+# 자연어처리 와 말뭉치 (corpus) ?
+자연어처리(natural language processing, NLP) 는 컴퓨터를 사용해 인간의 언어를 처리하는 분야.
+
+ex) 음성인식, 기계번역, 감성분석, 그리고 챗봇...
+
+자연어 처리 분야에서 훈련데이터를 종종 **말뭉치(corpus)** 라고 부릅니다.  
+
+이번예제에서 IMDB 리뷰 데이터셋이 하나의 말뭉치입니다
+
+# 텍스트 → 숫자 데이터
+(당연하지만) 컴퓨터는 숫자로 연산한다.  머신러닝 모델에도 입,출력은 숫자데이터다.  따라서 텍스트도 숫자로 표현하여 다루어야 한다
+
+일반적인 방법은 단어에 고유한 정수를 부여하는 거다
+
+'''
+He follows the cat.  He loves the cat
+ ↓    ↓      ↓   ↓     ↓   ↓     ↓  ↓
+ 10   11   12   13    10  14    12  13
+ 
+
+각 단어마다 고유한 정수값 부여.  동일 단어에는 동일한 정수 매핑
+단어의 의미나 크기와는 관련 없다.
+
+일반적으로, 영어문장의 경우 모두 소문자로 바꾸고 구둣점등을 삭제한 다음 공백을 기준으로 단어 분리
+이렇게 분리된 단어를 토큰(token) 이라 부릅니다.
+
+하나의 샘플은 여러개의 토큰으로 이루어져 있고, 1개의 토큰이 하나의 타임 스텝에 해당된다.
+
+※ 간단한 문제라면 영어 말뭉치에서는 '토큰' 과 '단어'는같다고 보아도 무방하나, 한글은 다릅니다
+한글은 조사, 어미변형등이 발달되어 있어서 단순히 공백으로 나누는 것만으로는 부족하기에
+반드시 형태소 분석을 통해 토큰을 만들어야 합니다  → KoNLPy 사용
+'''
+
+
+'''
+토큰에 할당되는 정수중 특별한 용도로 예약되어 있는 경우도 있다
+ex)
+0 - 패딩
+1 - 문장의 시작
+2 - 어휘 사전에 없는 토큰
+
+
+'어휘사전' : 훈련세트에서 '고유한 단어'를 뽑아 만든 목록
+'''
+
+
+# 실행마다 동일한 결과를 얻기 위해 케라스에 랜덤 시드를 사용하고 텐서플로 연산을 결정적으로 만듭니다. 
+
+import tensorflow as tf
+
+tf.keras.utils.set_random_seed(42)   # 랜덤 시드 사용
+
+tf.config.experimental.enable_op_determinism()  # 동일 hw, tf 상에서 항상 동일한 결과가 나올수 있도록 동작
+
+
+# IMDB 리뷰 데이터셋
+
+# IMDB 리뷰 데이터 셋은 영어로 된 문장이지만, 
+# 편리하게도 텐서플로에는 이미 정수로 바꾼 데이터가 포함되어 있다.
+
+from tensorflow.keras.datasets import imdb
+
+(train_input, train_target), (test_input, test_target)  = imdb.load_data(
+    num_words=500)  # 전체 데이터셋에서 가장 자주 등장하는 단어 500개만 지정해서 단어사전으로 사용 지정
+
+
+# 데이터셋 크기 확인
+
+train_input.shape, test_input.shape
+
+# shape 이 이상하다?
+# 25000개의 단일값(스칼라) 인가????
+
+# input data 확인
+train_input.dtype
+
+# dtype('O')   <-- 데이터 원소가 Python object 당.
+
+print(train_input[0])   # <-  각 샘플이 list 다!?
+
+# 리뷰 텍스트의 길이가 제각각입니다.  따라서 고정크기의 2차원 배열에 담기 보다는
+# 리뷰마다 별도의 파이썬 리스트로 담아서 메모리를 효율적으로 사용하는 겁니다
+
+print(len(train_input[0]))    # train 데이터의 첫번째 리뷰의 단어개수
+
+print(len(train_input[1]))    # train 데이터의 두번째 리뷰의 단어개수
+
+# ↑ 각 리뷰마다 길이가 다릅니다.
+# 여기선 하나의 리뷰가 하나의 샘플이 된다.
+# 과연 서로 다른 길이의 샘플을 신경망에 어떤게 전달해야 하나????  
+
+print(train_input[0])
+
+# ↑ TF 의 IMDB 리뷰 데이터는 이미 정수로 변환되어 있다. 
+# 앞서 num_words=500 으로 지정했기 때문에 어휘 사전에는 500개의 단어만 들어가 있습니다.
+# 단어 사전에 없는 단어는 모두 2로 표시되어 나타납니다
+
+# ※imdb_load_data() 함수는 500개의 단어를 '등장횟수순' 으로 고릅니다.
+
+# Target data 확인
+
+print(train_target[:20])
+
+# [1 0 0 1 0 0 1 0 1 0 1 0 0 0 0 0 1 1 0 1]
+
+# ↓ 해결할 문제는 리뷰가 '긍정(1)'인지 '부정(0)'인지 판단하는 것
+# 이진(binary) 문제로 볼수 있다.
+
+# Train data 에서 Validation data 세트 분리하기
+
+# train 와 validation 을 분리하는 이유 -> 나중에 overfit 이 잘 제어되는지 확인하기 위함
+
+# 원래 train 데이터가 25,000 개였고 20%를 검증(val) 세트로 떼어 놓으면
+# train 데이터는 20,000 개로 줄어들거다
+
+from sklearn.model_selection import train_test_split
+
+# 한번만 실행할것!
+train_input, val_input, train_target, val_target = train_test_split(
+    train_input, train_target, 
+    test_size=0.2,    # validation 용으로 20% 
+    random_state=42,   # 위의 keras 에서 지정한 random seed 값 42
+)
+
+train_input.shape, val_input.shape
+
+# train set 확인
+
+# 각 리뷰의 길이를 계산해 numpy 배열에 담기
+
+# ↓ 평균적인 리뷰의 길이와 가장 짧은 리뷰의 길이, 그리고 가장 긴 리뷰의 길이를 확인하고자 함
+
+import numpy as np
+
+lengths = np.array([len(x) for x in train_input])
+
+print(np.mean(lengths), np.median(lengths), np.min(lengths), np.max(lengths))
+
+# ↑ [관찰]
+# 평균 단어 개수가 239개.  중간값 178 인것으로 보아 이 리뷰 데이터는 한쪽에 치우진 분포일듯 하다
+
+# 히스토 그램으로 표현하고 확인해보자
+
+import matplotlib.pyplot as plt
+
+plt.hist(lengths)
+plt.xlabel('length')
+plt.ylabel('frequency')
+plt.show()
+
+# [관찰]
+# 역시 한쪽으로 치우졌다.  대부분의 리뷰 길이는 300 미만이다.
+# 평균이 중간값보다 높은 이유는 오른쪽 끝에 아주 큰 데이터가 있기 때문이다..
+# 어떤 리뷰는 1,000개의 단어가 넘어간다!
+
+# 패딩
+
+# tf.keras.utils.pad_sequences()
+
+```python
+tf.keras.utils.pad_sequences(
+    sequences,
+    maxlen=None,
+    dtype='int32',
+    padding='pre',
+    truncating='pre',
+    value=0.0
+)
+```
+
+
+https://www.tensorflow.org/api_docs/python/tf/keras/utils/pad_sequences
+
+
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# padding 전
+len(train_input[0]), len(train_input[5])
+
+train_seq = pad_sequences(
+    sequences=train_input,
+    maxlen=100,     # 100개의 단어만!
+                    # 100개의 단어보다 넘어가면 잘라내고.
+                    # 100개의 단어보다 작으면 padding 으로 채움
+)
+
+train_seq.shape
+
+# (20000, 100)
+# train_input 은 파이썬 리스트의 배열이었지만
+# train_seq 는 이제 (20000, 100) 크기의 2차원 array 가 되었다.  (깍두기!)
+
+len(train_seq[0]), len(train_seq[5])
+
+print(train_seq[0])
+
+# [0] 번째는 이건 원래 100보다 컸었다.
+# 앞뒤로 0 이 안 붙었다.
+
+# 원래 샘플의 앞부분이 잘렸나?  뒷부분이 잘렸나? 
+print(train_input[0][:100])
+print(train_input[0][-100:])
+
+# 결과
+# 앞부분이 잘렸다.
+# truncating='pre'  가 작동
+
+# pad_sequences() 함수는 기본적으로 maxlen 보다 긴 시퀀스는 앞부분을 자릅니다
+# 이렇게 하는 이유는 일반적으로 시퀀스의 뒷부분의 정보가 더 유용하리라 기대하기 때문
+# 영화 리뷰 데이터를 생각해보면 리뷰의 끝에 뭔가 결정적인 소감(혹은 결론)을 말할 가능성이 높다
+
+# 만약 시퀀스의 뒷부분을 잘라내고 싶다면 pad_sequences() 함수의 truncating 매개변수의 값을
+# 기본값 'pre' 가 아닌 'post' 로 바꾸면 된다.
+
+print(train_seq[5])
+
+# 원래 train_input[5] 는 96개였다
+# 앞에 패딩(0)이 4개 들어간것 주목!
+
+# 시퀀스의 마지막에 있는 단어가 셀의 은닉상태에 가장 큰 영향을 미치게 되므로 
+# 마지막에 패딩을 추가하는 방식은 일반적으로 선호하지 않습니다
+
+# 같은 방식으로 validation 세트의 길이도 100으로 맞추자
+
+val_seq = pad_sequences(val_input, maxlen=100)
+
+## 순환 신경망 만들기
+
+keras.layers.SimpleRNN 사용
+
+https://www.tensorflow.org/api_docs/python/tf/keras/layers/SimpleRNN
+
+
+# keras.Sequential()
+
+# keras 에서 모델 쌓기 위해 제공하는 방법 2가지
+#     1. 함수스타일로 쌓기
+#     2. Sequential() 사용
+
+# ※ sequential data 와는 아무런 관련 없다.
+
+from tensorflow import keras
+
+model = keras.Sequential()
+
+model.add(keras.layers.SimpleRNN(
+    units=8,   # 순환층 뉴런개수, 
+    input_shape=(100, 500),  # 입력차원.  앞의 샘플의 시퀀스길이 100, 뒤의 500은 단어표현 -> one-hot encoding 된 형태
+
+    #↑ 순환층의 활성화 함수 activation= 값은 디폴트인 tanh 사용
+))
+
+# IMDB 는 이진분류 문제  마지막 출력층은 1개 뉴런 + sigmoid 활성화 함수 사용
+model.add(keras.layers.Dense(1, activation='sigmoid'))
+
+## One-hot encoding
+
+# 위  input_shape(100, 500) <-- 500은 무엇인가  (단어표현, 사전의길이)
+# 문장내 토큰을 정수화한건.  크기와 산술연산과는 아무런 관련 없는 데이터다.
+# (즉, 숫자형 데이터가 아닌 분류형인데..)
+# 정수값의 크기 속성을 없애고 각 정수롤 '고유하게 표현하는' 방법으로 One-hot encoding 사용한다
+
+# 첫 문장의 seq
+train_seq[0]
+
+# 만약 첫번째 토큰 '10' 을 one-hot encoding 으로 변환하면??
+# 0 0 0 0 0 0 0 0 0 ... 0 0 1 0 0 ... 0 0 0 0 0   <-- 어딘가 1 하나만 구성된 벡터로 변환될거다.
+
+# 위 벡터(배열)의 길이가 바로 500 이다! 왜!!?
+# imdb.load_data() 에서 500개의 단어만 사용하도록 지정했기 때문에 고유한 단어는 모두 500개 입니다.
+# 즉 훈련데이터에 포함될수 있는 정숫값의 범위는 0 (패팅토큰) ~ 499 까지 입니다.
+# 따라서 이 범위를 One-Hot encoding 으로 표현하려면 토큰하나의 배열의 길이가 500이어야 함.
+
+
+keras 에서 제공하는
+#### tf.keras.utils.to_categorical(정수배열)  <- 편리하게 변환
+
+```python
+tf.keras.utils.to_categorical(
+    y, num_classes=None, dtype='float32'
+)
+```
+
+https://www.tensorflow.org/api_docs/python/tf/keras/utils/to_categorical
+
+# one-hot 인코딩 전
+train_seq.shape
+
+train_seq
+
+train_oh = keras.utils.to_categorical(train_seq)
+
+train_oh.shape   # 토큰 하나가 500개 의 1차원 벡터로 표현된다!
+
+train_oh[0][0]   # 첫번째 토큰 10 이 one-hot encoding 으로 변환된 모습
+
+# ※ 위와 같은 형태의 벡터를 희소벡터 라고도 함
+
+np.sum(train_oh[0][0])   # 어쨋든 '1' 은 하나 밖에 없을테니..
+
+# validation 세트도 one-hot encoding 으로 준비해두기
+val_oh = keras.utils.to_categorical(val_seq)
+
+val_oh.shape
+
+model.summary()
+
+"""
+Model: "sequential"
+_________________________________________________________________
+ Layer (type)                Output Shape              Param #   
+=================================================================
+ simple_rnn (SimpleRNN)      (None, 8)                 4072      
+
+     # SimpleRNN 에 전달할 샘플의 크기는 (100, 500) 이지만 
+     # 이 순환층은 마지막 타임스텝의 은닉상태만 출력합니다
+     # 이 때문에 출력크기가 순환층의 뉴런 개수와 동일한 8임을 확인할수 있다
+
+     # parameter 의 개수
+     #   입력토큰은 500차원의 One-hot 인코딩 배열.  이 배열이 순환층의 뉴런 8개와 완전 연결되어
+     #        500 * 8 = 4000 개의 입력 weight 가 있다.
+
+     #   순환층의 은닉상태는 다시 다음 타임스텝에 사용되기 위해 또다른 weight 와 곱해진다.
+     #   이 은닉상태도 순환층의 뉴런과 완전히 연결되기 때문에 
+     #       8(은닉상태 크기) * 8(뉴런의 개수) = 64 개의 weight
+     
+     #  그리고 뉴런마다 bias 있다. +8개의 weight
+     
+     #   4000 + 64 + 8 => 4072 개 parameter  
+
+
+
+ dense (Dense)               (None, 1)                 9         
+     # parameter
+     #   (입력8 + bias 1) x 출력 1  => 9개의 weight
+                                                                 
+=================================================================
+Total params: 4,081
+Trainable params: 4,081
+Non-trainable params: 0
+_________________________________________________________________
+"""
+None
+
+import os
+base_path = r'/content/drive/MyDrive/DATA_SET/RNN'
+base_path = r'D:\DevRoot\dataset\RNN'
+
+rmsprop = keras.optimizers.RMSprop(learning_rate=1e-4)   # learning rate : 0.0001
+model.compile(optimizer=rmsprop, 
+              loss='binary_crossentropy', 
+              metrics=['accuracy'])
+
+# 체크포인트 callback.  가장 학습결과가 좋았던 모델을 저장.
+checkpoint_cb = keras.callbacks.ModelCheckpoint(os.path.join(base_path, 'best-simplernn-model.h5'), 
+                                                save_best_only=True)
+
+# 조기종료 callback
+# 더 이상 학습상태가 낳아지지 않으면 바로 epoch 종료
+early_stopping_cb = keras.callbacks.EarlyStopping(patience=3, 
+                                                  restore_best_weights=True)
+
+history1 = model.fit(train_oh, train_target, epochs=100, batch_size=64,
+                     validation_data=(val_oh, val_target),  # epoch 진행될때마다 validation loss 계산
+                     callbacks = [
+                         checkpoint_cb,  
+                         early_stopping_cb, 
+                     ],
+                     )
+
+
+
+tf.__version__
+
+#### training loss 와 validation loss 의 시각화
+
+# history1.history['loss']  # training loss
+# history1.history['val_loss'] # validataion loss
+
+plt.plot(history1.history['loss'])
+plt.plot(history1.history['val_loss'])
+plt.xlabel('epoch')
+plt.ylabel('loss')
+plt.legend(['train', 'val'])
+plt.show()
+
+# 생각해야 할 문제점!
+# one-hot encoding 으로 인해 입력데이터가 엄청 커진다.
+
+train_seq.shape, train_seq.dtype
+
+train_seq.nbytes
+
+# 20000 x 100 x 4byte => 8,000,000
+
+train_oh.shape, train_oh.dtype
+
+train_oh.nbytes
+
+# 20000 x 100 x 500 x 4byte = 4,000,000,000  (헉! 4G)
+
+# one-hot encoding 의 문제점!   훈련데이터가 커질수록 용량문제 발생!
+
+# word embedding 이 대안!
+
+# 단어 임베딩 사용하기
+word embedding
+
+# 순환신경망에서 텍스트를 처리할때 자주 사용하는 방법! 단어 임베딩!
+# 각 '단어'를 '고정된 크기의 실수 벡터'로 바꾸어 줌.
+
+![image.png](attachment:image.png)
+
+# ex) 10개의 실수 벡터로 단어 'cat' 을  임베딩
+
+# 이런 단어 임베딩으로 만들어진 벡터는 One-Hot encoding 된 벡터보다 훨씬 의미있는 값으로 채워져 있기에 
+# 자연어처리 에서 더 좋은 성능을 내는 경우가 많습니다.
+
+# 물론 keras 에도 단어 임베딩 벡터를 만드는 layer 준비되어 있다
+
+### tf.keras.layers.Embedding
+
+https://www.tensorflow.org/api_docs/python/tf/keras/layers/Embedding?hl=en
+
+```python
+tf.keras.layers.Embedding(
+    input_dim,   # 어휘 사전의 크기
+    output_dim,  # 임베딩 벡터의 크기
+    embeddings_initializer='uniform',
+    embeddings_regularizer=None,
+    activity_regularizer=None,
+    embeddings_constraint=None,
+    mask_zero=False,
+    input_length=None,
+    **kwargs
+)
+```
+
+- 이 레이어도 모델에 추가되어 학습되는 레이어다 (즉 parameter 가 있다!)
+- 처음에는 모든 벡터가 랜덤으로 초기화 되지만 훈련을 통해 데이터에서 점점 좋은 단어 임베딩으로 학습되어진다
+
+# 단어 임베딩 의 장점은 걍 '정수 데이터'를 받는 다는 거다
+#  즉, One-Hot 인코딩으로 변경된 train_oh 배열이 아니라 train_seq 를 바로 사용할수 있다
+#  따라서 !  메모리를 훨씬 효율적으로 사용할수 있다!!
+
+# 앞서 One-Hot Encoding 은 
+# 샘플차원 하나를 500차원으로 늘렸기 때문에  (100, ) 의 샘플이 (100, 500) 으로 커짐
+
+# 단어 임베딩도 (100, ) 크기의 샘플을, (예를들면->) (100, 20) 과 같이 2차원 배열로 늘립니다.
+# 하지만 One-hot 인코딩과 달리 훨씬 작은 크기로도 단어를 잘 표현할수 있다
+
+# Embedding 레이어를 .SimpleRNN 앞에 추가
+
+model2 = keras.Sequential()
+model2.add(keras.layers.Embedding(
+    input_dim = 500,  # 어휘 사전의 크기,  
+                        # 앞서 IMDB 리뷰 데이터셋에서 500개의 단어만 사용하도록 설정되었었다 
+                        # imdb.load_data(num_words=500)
+    output_dim = 16,   # 임베딩 벡터의 크기.  One-Hot 인코딩보다 훨~씬 작은 크기의 벡터사용 
+    input_length = 100, # 입력 시퀀스의 길이.  
+                        # 앞서 샘플의 길이를 100으로 맞추어 train_seq 를 만들었 었습니다.
+))
+
+model2.add(keras.layers.SimpleRNN(8))
+model2.add(keras.layers.Dense(1, activation='sigmoid'))
+
+model2.summary()
+
+
+"""
+Model: "sequential_1"
+_________________________________________________________________
+ Layer (type)                Output Shape              Param #   
+=================================================================
+ embedding (Embedding)       (None, 100, 16)           8000      
+                         # 입력: (100,) -> 출력 (100, 16)
+                # parameter 개수
+                # Embedding 클래스는 500개의 각 토큰을 크기가 16인 벡터로 변경하기 때문에
+                #   500 x 16 = 8000 개의 모델 파라미터 가짐
+                                                                 
+ simple_rnn_1 (SimpleRNN)    (None, 8)                 200       
+                # paramete r개수
+                #   입력 16 x 8개의 뉴런 => 128
+                # 은닉상태 8 x 8         => 64
+                #   bias      8개        => 8
+                                                                 
+ dense_1 (Dense)             (None, 1)                 9         
+              # parameter
+     #   (입력8 + bias 1) x 출력 1
+                                                        
+=================================================================
+Total params: 8,209
+Trainable params: 8,209
+Non-trainable params: 0
+_________________________________________________________________
+"""
+None
+
+rmsprop = keras.optimizers.RMSprop(learning_rate=1e-4)
+model2.compile(optimizer=rmsprop, loss='binary_crossentropy', 
+               metrics=['accuracy'])
+
+checkpoint_cb = keras.callbacks.ModelCheckpoint('best-embedding-model.h5', 
+                                                save_best_only=True)
+early_stopping_cb = keras.callbacks.EarlyStopping(patience=3,
+                                                  restore_best_weights=True)
+
+history2 = model2.fit(train_seq, train_target, epochs=100, batch_size=64,
+                     validation_data=(val_seq, val_target),
+                     callbacks=[checkpoint_cb, early_stopping_cb])
+
+# ↑ 출력결과를 보면 One-hot 인코딩일때와 비슷한 성능
+
+# 무엇보다도 학습속도가 향상됨
+# 그런데 전체 parameter 개수로 보면.. 음 ..4,081 -> 8,209   (두배나 늘었는데.??)
+
+# RNN 의 weight 가 학습속도에 영향을 주는것이다
+# 순환층의 weight 개수는 훨~~씬 작고, 훈련용 데이터 세트의 크기도 훨씬 줄어듬.
+# SimpleRNN (4072 -> 200)
+
+
+
+plt.plot(history2.history['loss'])
+plt.plot(history2.history['val_loss'])
+plt.xlabel('epoch')
+plt.ylabel('loss')
+plt.legend(['train', 'val'])
+plt.show()
+
+#### 핵심키워드
+
+1. 말뭉치 (corpus)
+1. 토큰 (token)
+1. One-hot encoding
+1. 단어 임베딩 (word embedding)
+
+#### 핵심 패키지와 함수
+
+1. pad_sequences()
+1. to_categorical()
+1. SimpleRNN
+1. Embedding
+
+# Q]
+# pad_sequences(5, padding='post', truncating='pre') 로 했을때 만들어질수 없는 시퀀스는?
+# ① [10, 5, 7, 3, 8]
+# ② [0, 0, 10, 5, 7]
+# ③ [5, 7, 3, 8, 0]
+# ④ [7, 3, 8, 0, 0]
+
+# [정답]
+# ② : padding='post'  이므로 패딩 '0' 는 항상 시퀀스의 끝에 추가되어야 한다
+
+# Q]
+# 어떤 순환층에 
+# 입력의 크기 (100, 10)
+# 순환층 뉴런 개수 16개
+
+# 이 레이어에 필요한 모델 파라미터의 개수는?
+
+
+# [정답]
+# 입력 토큰벡터의 크기가 10
+# 순환층 뉴런 개수 16
+
+# 10 * 16   160    입력 x 뉴런 = Wx
+# 16 * 16   256    순환층의 은닉상태에 곱해지는 Wh의 크기 
+# 16         16    뉴런마다 1개씩 bias
+# ---------------
+#           432     
