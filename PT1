@@ -1,0 +1,94 @@
+# 뉴스기사 생성 모델
+
+LSTM 을 활용하여 가짜 뉴스기사 생성기 
+
+# 데이터 불러오기 및 전처리
+
+import tensorflow as tf
+import numpy as np
+import time
+import pandas as pd
+import os
+import re
+
+## 데이터 불러오기
+
+- 한글 뉴스기사 데이터셋을 받습니다.
+- 한글 뉴스기사 200개의 데이터셋입니다.
+- IT 관련 기사 데이터셋입니다. IT 관련 뉴스기사를 학습 시키므로, 향후 예측시 IT 관련된 뉴스기사가 생성됩니다.
+
+base_path = r'D:\DevRoot\dataset\RNN'
+
+df = pd.read_csv(os.path.join(base_path, r'sample-news.csv'))
+
+df
+
+df.shape
+
+- 전처리를 진행합니다.
+- re 모듈을 사용하며 regular expression 문법을 사용하여, 한글, 영어, 숫자를 제외한 모든 문자는 제거합니다.
+- 문장의 끝에는 '#'를 추가하여, 신문 기사의 끝이라는 표기를 해줍니다.
+
+# 첫번째 기사 확인
+df.text[0]
+
+def clean_sentence(sentence):
+    # 한글, 영어, 숫자를 제외한 모든 문자는 제거합니다.
+    sentence = re.sub(r'[^0-9a-zA-Zㄱ-ㅎㅏ-ㅣ가-힣 ]',r'', sentence)  
+    
+    # 문장의 끝을 표기합니다
+    sentence += ' #'
+    return sentence
+
+# 함수 테스트
+clean_sentence('abcef가나다^^$%@12시 땡^^!??')
+
+df['text'] = df['text'].apply(clean_sentence)
+
+df
+
+df.text[0]
+
+## DataFrame 에서 text 만 병합
+
+text = ' '.join(df['text'])
+
+text
+
+# ↓ 기사와 기사 사이에 ' #' 이 존재함 확인
+
+# 문장의 길이
+len(text)
+
+## 텍스트 전처리(preprocessing)
+
+### 단어사전 만들기
+먼저 중복되는 모든 글자를 제외하기 위해 set() 을 사용
+
+set('good morning')
+
+vocab = sorted(set(text))
+print(vocab)
+
+len(vocab)  # 고유 글자의 개수
+
+'?' in vocab
+
+'?' 글자를 추가해 준다.  추후 사용자의 입력이 없는 글자일때는 '?' 로 입력하기 위함
+
+vocab.append('?')
+
+len(vocab)
+
+### 데이터 형태 변환하기
+`char2idx`는 글자를 index로 변환하는 역할이고, `idx2char`는 index를 글자로 역변환하는 목적입니다.
+
+# 글자 -> index 변환
+char2idx = {u: i for i, u in enumerate(vocab)}
+
+# index -> 글자로 변환
+idx2char = np.array(vocab)
+
+char2idx
+
+idx2char
