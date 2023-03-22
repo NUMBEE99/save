@@ -1,0 +1,328 @@
+# 문장 분류를 위한 CNN 모델 
+
+
+# 필요한 모듈 임포트
+import pandas as pd
+import tensorflow as tf
+from tensorflow.keras import preprocessing
+
+# CNN 모델 생성용 ↓
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Embedding, Dense, Dropout, Conv1D, GlobalMaxPool1D, concatenate
+
+import os
+
+base_path = r'D:\DevRoot\dataset\chatbot'
+
+# 데이터 읽어오기
+train_file = os.path.join(base_path, 'chatbot_data.csv')
+data = pd.read_csv(train_file)
+data
+
+
+- 위 데이터셋 구조
+    - Q (질문),  
+    - A (답변)
+    - label (감정)
+        - **0**: 일상다반사
+        - **1** : 이별(부정)
+        - **2** : 사랑(긍정)
+
+data.info()
+
+data['label'].unique()
+
+data['label'].value_counts()
+
+features = data['Q'].tolist()
+labels = data['label'].tolist()
+
+features[0], labels[0]
+
+## 단어 시퀀스 (word sequence) 만들기 
+
+### tf.keras.preprocessing.text.text_to_word_sequence()
+단어 시퀀스를 만든다.  단어 시퀀스란 단어 토큰들의 순차적 리스트
+
+https://www.tensorflow.org/api_docs/python/tf/keras/preprocessing/text/text_to_word_sequence
+
+```python
+tf.keras.preprocessing.text.text_to_word_sequence(
+    input_text,
+    filters='!"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n',
+    lower=True,
+    split=' '
+)
+```
+
+리턴값: A list of words (or tokens).
+
+preprocessing.text.text_to_word_sequence(features[0])
+
+# 단어 인덱스 시퀀스 벡터
+corpus = [ preprocessing.text.text_to_word_sequence(text)  for text in features]
+
+corpus
+
+### tf.keras.preprocessing.text.Tokenizer 객체
+
+
+https://www.tensorflow.org/api_docs/python/tf/keras/preprocessing/text/Tokenizer
+
+
+```python
+tf.keras.preprocessing.text.Tokenizer(
+    num_words=None,
+    filters='!"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n',
+    lower=True,
+    split=' ',
+    char_level=False,
+    oov_token=None,
+    analyzer=None,
+    **kwargs
+)
+```
+
+
+tokenizer = preprocessing.text.Tokenizer()
+type(tokenizer)
+
+##### fit_on_texts()
+
+- 주어진 text  기반으로 Tokenizer 내부 어휘 update 수행
+- texts_to_sequences 나 texts_to_matrix 호출전에 반드시 먼저 호출해야 한다
+
+https://www.tensorflow.org/api_docs/python/tf/keras/preprocessing/text/Tokenizer#fit_on_texts
+
+```python
+fit_on_texts(
+    texts
+)
+```
+
+tokenizer.fit_on_texts(corpus)  # 단어 시퀀스 벡터
+
+corpus  # 매개변수는 안변했구...
+
+#### texts_to_sequences()
+- 문장내 모든 단어를 시퀀스 번호로 변환
+- https://www.tensorflow.org/api_docs/python/tf/keras/preprocessing/text/Tokenizer#texts_to_sequences
+```python
+texts_to_sequences(
+    texts
+)
+```
+
+
+
+sequences = tokenizer.texts_to_sequences(corpus)
+sequences
+
+corpus[0], sequences[0]
+
+corpus[8], sequences[8]
+
+# 단어별 시퀀스 번호 확인 가능
+word_index = tokenizer.word_index  # fit 할때 내부적으로 생성
+word_index
+
+len(word_index)
+
+##### 위 단계를 그림으로 나타낸 설명
+**그림6-17**
+![image-2.png](attachment:image-2.png)
+
+tokenizer.texts_to_sequences([['여기', '어때'], ['연말', '연시']])
+
+# Tokenizer 에 인덱싱이 되어 있지 않은 단어들은 sequence 에서 제외된다.
+
+#### 시퀀스 번호로 만든 벡터의 문제점 
+** 문장의 길이가 제각각 이라 벡터 크기가 다 다르다. **
+- 그러나! CNN 모델은 입력 계층은 고정된 개수의 입력노드다! 
+
+
+- 그래서 넉넉한 크기의 MAX 시퀀스 길이를 잡고
+- MAX 시퀀스 길이보다 작은 벡터는 0 으로 채우는 (패딩)한다  --> pad_sequences()
+- https://www.tensorflow.org/api_docs/python/tf/keras/utils/pad_sequences
+
+
+
+
+# 가장 많은 수의 토큰을 가진 문장의 토큰 개수
+# 패딩을 집어넣기 위해 최대 몇개의 토큰이 있었는지 확인하는 절차
+max([len(words) for words in corpus])
+
+# 단어 시퀀스 벡터 크기
+MAX_SEQ_LEN = 15
+#    너무 크게 잡으면 빈 공간이 많이 생기게 되어 메모리 낭비.
+#    너무 작게 잡으면 입력 데이터가 손실될 위험.
+
+padded_seqs = preprocessing.sequence.pad_sequences(
+    sequences, 
+    maxlen=MAX_SEQ_LEN, 
+    padding='post',  # 으잉?
+)
+
+padded_seqs
+
+# padding옵셥값
+# 'pre' : 앞쪽에 패딩이 붙는다  (디폴트, RNN 등에선 이를 사용)
+# 'post': 뒤쪽에 패딩이 붙는다  (여기선, CNN 을 사용할거다 )
+
+corpus[0], sequences[0], padded_seqs[0]
+
+### Dataset 객체 만들기
+
+# 위에 패딩 처리된 시퀀스 (padded_seqs) 의 벡터 리스트와 감정(label) 리스트 전체를 TF의 Dataset 객체로 만든다
+# 그리고 데이터를 랜덤으로 섞고, train, validation, test 용 데이터 셋을 7:2:1 비율로 나눠 데이터셋을 각각 분리합니다
+# batch 로 묶습니다.
+
+padded_seqs.shape
+
+len(labels)
+
+ds = tf.data.Dataset.from_tensor_slices((padded_seqs, labels))
+ds
+
+# 첫번째것만 들여다 보기
+iter(ds).get_next()
+
+ds = ds.shuffle(len(features))  # 랜덤 섞기
+ds
+
+# train, val, test 분리
+
+# take(), batch()
+
+# train:val:test = 7:2:1
+
+train_size = int(len(padded_seqs) * 0.7)
+val_size = int(len(padded_seqs) * 0.2)
+test_size = int(len(padded_seqs) * 0.1)
+
+len(ds), train_size, val_size, test_size
+
+train_ds = ds.take(train_size).batch(20)
+val_ds = ds.skip(train_size).take(val_size).batch(20)
+test_ds = ds.skip(train_size + val_size).take(test_size).batch(20)
+
+# 이들은 나중에 학습 fit() 의 매개변수로 입력됨.
+
+len(train_ds), len(val_ds), len(test_ds)
+
+# (414, 119, 60)  <-- 데이터의 개수가 아니라 batch 의 개수다!
+
+## 모델생성
+감정 클래스 분류 CNN 모델
+
+- CNN 모델을 keras 함수형 모델(functional model) 방식으로 구현
+- 모델 블럭 그림
+
+**감정 클래스 분류 CNN 모델 블럭**
+
+
+# 하이퍼 파라미터 설정
+dropout_prob = 0.5
+EMB_SIZE = 128
+EPOCH = 5
+VOCAB_SIZE = len(word_index) + 1   # 전체 단어수
+
+# CNN 모델 정의
+
+# ▶ 1. 단어 임베딩 영역
+input_layer = Input(shape=(MAX_SEQ_LEN,))
+
+#      앞서 단어별로 패딩 처리된 시퀀스 벡터는 희소 벡터 입니다.
+#      입베딩 계층은 희소 벡터를 입력받아 데이터 손실을 최소화 하면서 벡터 차원이 압축되는 밀집벡터로 변환해줍니다.
+#        VOCAB_SIZE : 단어개수,
+#        EMB_SIZE : 임베딩 결과로 나올 밀집 벡터의 크기
+#        MAX_SEQ_LEN:  입력되는 시퀀스 벡터의 크기
+embedding_layer = Embedding(VOCAB_SIZE, EMB_SIZE, input_length=MAX_SEQ_LEN)(input_layer)
+
+dropout_emb = Dropout(rate=dropout_prob)(embedding_layer)
+
+# ▶ 2. 특징 추출 영역 ( feature extraction)
+#    Conv1D 를 이용해 크기 3, 4, 5 인 합성곱 필터를 128개씩 사용한 합성곱 계층을 3개 생성
+#    합성곱 연산 과정 : 필터 크기에 맞게 입력 데이터 위를 슬라이딩 하게 되는데 이는 3, 4, 5-gram 언어 모델의 개념과 비슷
+#    입베딩 벡터를 합성곱으로 받아 GlobalMaxPool1D () 를 이용해 최대 max pooling 연산 수행
+#    각각 '병렬'로 진행
+
+conv1 = Conv1D(filters=128, kernel_size=3, padding='valid', activation='relu')(dropout_emb)
+pool1 = GlobalMaxPool1D()(conv1)
+
+conv2 = Conv1D(filters=128, kernel_size=4, padding='valid', activation='relu')(dropout_emb)
+pool2 = GlobalMaxPool1D()(conv2)
+
+conv3 = Conv1D(filters=128, kernel_size=5, padding='valid', activation='relu')(dropout_emb)
+pool3 = GlobalMaxPool1D()(conv3)
+
+#     이후 3, 4, 5- gram 이후 합쳐서 그 다음 fully connected layer 에 전달될수 있도록 합니다
+#   concatenate () 함수 는 각각 병렬로 처리된 합성곱 계층의 특징맵 결과를 하나로 묶어 줍니다
+#    https://www.tensorflow.org/api_docs/python/tf/keras/layers/concatenate
+concat = concatenate([pool1, pool2, pool3])
+
+# ▶ 3. 완전연결계층 (Full connected layer)
+#  이전 계층에서 합성곱 연산과 maxpool  로 나온 3개의 특징맵 데이터를 입력으로 받아
+# 128 개 출력 노드, relu 활성화
+hidden = Dense(128, activation=tf.nn.relu)(concat)  
+dropout_hidden = Dropout(rate=dropout_prob)(hidden)
+
+logits = Dense(3, name='logits')(dropout_hidden)
+
+predictions = Dense(3, activation=tf.nn.softmax)(logits)
+
+
+
+
+#### 모델 생성
+
+model = Model(inputs = input_layer, outputs=predictions)
+
+model.summary()
+
+# 모델 생성후에는 컴파일
+# optimizer : adam 사용
+# loss func : sparse_categorical_crossentropy 사용
+# 모델평가 metric : accuracy   <-- ※ loss  값만 확인하면 된다면 생략해도 됨.
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+## 학습
+
+# fit(학습용 데이터셋, validation 데이터셋 ...)
+# epochos=5   : 모델 학습을 5회 반복
+# verbose=1  : 모델 학습과정 출력
+model.fit(train_ds, validation_data=val_ds, epochs=EPOCH, verbose=1)
+
+#### 성능평가
+
+# 모델 평가 (test dataset 이용)
+loss, accuracy = model.evaluate(test_ds, verbose=1)
+print('Accuracy: %f' % (accuracy * 100))
+print('loss: %f' % (loss))
+
+#### 학습완료된 모델 저장
+
+base_path
+
+model.save(os.path.join(base_path, 'cnn_model.h5'))
+
+
+
+## 테스트
+
+corpus[10212]
+
+labels[10212]  # 사랑, 긍정
+
+padded_seqs[10212]
+
+###### 10212 번째 데이터의 감정 예측 
+
+picks = [10212]
+
+predict = model.predict(padded_seqs[picks])
+
+predict_class = tf.math.argmax(predict, axis=1)
+
+print("감정 예측점수: ", predict)
+print("감정 예측클래스: ", predict_class.numpy())
