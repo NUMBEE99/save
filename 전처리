@@ -1,0 +1,134 @@
+# 전처리 과정 
+
+- 자연어 처리에 있어 제일 처음 수행해야 하는 기본적인 과정
+- 전처리 결과와 품질에 따라 후처리및 결과의 성능차이가 커지므로 중요한 (+ 손이 많이 가는) 작업
+
+#### 챗봇엔진의 주요 전처리 과정
+1. 토크나이징 (형태소 분석기 사용)
+2. 불용어 제거
+
+위 전처리 결과 '의미있는 정보' 만 걸러냄
+
+#### 전처리 담당 모듈 만들기
+
+- {project}/utils/Preprocess.py 생성
+
+# 전처리 모듈은 챗봇 엔진 내에서 자주 사용하기 때문에 클래스로 설계
+
+from konlpy.tag import Komoran
+import pickle
+import jpype
+
+
+class Preprocess:
+    def __init__(self, userdic=None):  # 생성자
+
+        # ① 형태소 분석기 초기화
+        self.komoran = Komoran(userdic=userdic)  # 사용자 정의 사전 파일의 경로 입력 가능
+
+        # ② 제외할 품사
+        # 참조 : https://docs.komoran.kr/firststep/postypes.html
+        # 관계언 제거, 기호 제거
+        # 어미 제거
+        # 접미사 제거
+        self.exclusion_tags = [
+            'JKS', 'JKC', 'JKG', 'JKO', 'JKB', 'JKV', 'JKQ',
+            'JX', 'JC',
+            'SF', 'SP', 'SS', 'SE', 'SO',
+            'EP', 'EF', 'EC', 'ETN', 'ETM',
+            'XSN', 'XSV', 'XSA'
+        ]
+
+    # ③ 형태소 분석기 POS 태거
+    #  이렇게 래퍼(wrapper) 를 만들어 두면 나중에 형태소 분석기 종류를 바꾸어도 동작할수 있다. (유지보수 측면 good)
+    def pos(self, sentence):
+        return self.komoran.pos(sentence)
+
+    # ④ 불용어 제거 후, 필요한 품사 정보만 가져오기
+    def get_keywords(self, pos, without_tag=False):
+        f = lambda x: x in self.exclusion_tags
+        word_list = []
+        for p in pos:
+            if f(p[1]) is False:
+                word_list.append(p if without_tag is False else p[0])
+        return word_list
+
+##### 테스트
+
+sent = "내일 오전 10시에 탕수육 주문하고 싶어"
+
+p = Preprocess(userdic = './chatbot/utils/user_dic.tsv')
+
+pos = p.pos(sent)
+
+pos
+
+# 불용어 제거된 키워드 출력
+ret = p.get_keywords(pos, without_tag=False)
+ret
+
+ret = p.get_keywords(pos, without_tag=True)
+ret
+
+
+
+## 단어 사전 구축 및 시퀀스 생성
+
+# 예제에서 제공하는 말뭉치 데이터는 지금까지 예제에서 제공하는 말뭉치 데이터를 모두 합친 데이터 입니다
+
+# 말뭉치(corpus) 데이터 : /train_tools/dict/corpus.txt
+#  네이버 영화 리뷰 말뭉치 데이터를 기반으로 만든 데이터  
+#   (기본적으로 \t 으로 id, comment, label 컬럼으로 데이터 구분되어있다)
+
+##### 사전 파일 생성
+
+from tensorflow.keras import preprocessing
+import pickle
+import os
+
+
+# 말뭉치 데이터 읽어오기
+# 말뭉치(corpus) 데이터 : /train_tools/dict/corpus.txt
+#  네이버 영화 리뷰 말뭉치 데이터를 기반으로 만든 데이터  (기본적으로 \t 으로 id, comment, lavel 컬럼으로 데이터 구분되어있다)
+def read_corpus_data(filename):
+    with open(filename, 'r', encoding='utf-8') as f:
+        data = [line.split('\t') for line in f.read().splitlines()]
+    return data
+
+
+# ① 말뭉치 데이터 가져오기
+corpus_data = read_corpus_data(os.path.join('chatbot/train_tools/dict', 'corpus.txt'))
+
+print(len(corpus_data))
+corpus_data[:10]
+
+# ② 위에서 불러온 말뭉치 데이터 리스트에서 문장을 하나씩 불러와 POS 테깅  (★시간걸림★)
+p = Preprocess()
+dic = []
+for c in corpus_data:
+    pos = p.pos(c[1])
+    for k in pos:
+        dic.append(k[0])
+
+print(len(dic))
+dic[:20]
+
+
+# 반드시 \t 를 사용해 데이터를 컬럼에 맞게 추가
+
+#  ③ Tokenizer 를 이용해 위에서 만든 dict 를 단어 인덱스 딕셔너리 (word_index) 데이터로 만듭니다
+# 사전의 첫번 째 인덱스에는 OOV 사용
+tokenizer = preprocessing.text.Tokenizer(oov_token='OOV')  # 어휘에 없으면 'OOV' 로 token 대체
+tokenizer.fit_on_texts(dic)
+word_index = tokenizer.word_index
+
+word_index
+
+# ④ 생성된 단어 인덱스 딕셔너리(word_index) 객체를 파일로 저장
+f = open(os.path.join('chatbot/train_tools/dict',"chatbot_dict.bin"), "wb")  # binary 모드에선 encoding 옵션 필요없다
+try:
+    pickle.dump(word_index, f)
+except Exception as e:
+    print(e)
+finally:
+    f.close()
