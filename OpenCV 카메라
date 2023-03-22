@@ -1,0 +1,181 @@
+# OpenCV 로 카메라 다루기 
+
+import os
+import sys
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+
+base_path = r'D:\DevRoot\dataset\ComputerVision'
+
+# ↓ Google Colab 에서 
+# from google.colab.patches import cv2_imshow  # 이미지를 보여줄 경우 필요
+# from google.colab import files # 파일을 업로드 할때 필요
+
+def cv2_imshow(image):
+    cv2.imshow('image', image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
+def plt_imshow_bgr(bgr_img):
+    cvtImg = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
+    plt.imshow(cvtImg)
+    plt.show()
+
+# VideoCapture 클래스
+# OpenCV에서는 카메라와 동영상으로부터 프레임(frame)을 받아오는  작업을 
+# cv2.VideoCapture 클래스 하나로 처리함
+
+# 동영상파일, 혹은 카메라로부턴 동영상을 처리한다는 것은
+# 결국 한장의 영상(이미지, 프레임)씩 가져와서 한장씩 처리 하며, 이를 반복하는 것이다.
+
+
+# 기본적으로 '동영상 파일' 에서 읽어오는 것과 '카메라' 에서 가져오는 것은 다르다
+# 그러나, read() 를 사용해서 한장씩 읽어와서 화면에 보여주면 동영상처럼 보여지게 된다.
+
+# VideoCapture() 하나를 가지고 '동영상' 과 '카메라' 두가지를 다룰수 있다.
+
+#     VideoCapture(index)  # index 는 카메라 device 번호(정수), - 0 이면 기본 카메라
+#     VideoCapture(filename)   # 생성자.
+
+# ppt 참조
+
+## 카메라 사용하기
+
+cap = cv2.VideoCapture(0)  # 카메라가 없거나, 혹은 다른 프로그램에서 사용하고 있다면 사용 불가.
+
+if not cap.isOpened():
+    print('cameara open failed')
+    sys.exit()
+    
+# Open 되어 있는 카메라에서 한 프레임씩 가져오기
+while True:
+    ret, frame = cap.read() # retval, image 를 리턴한다.  (이미지 받아올때까지 블로킹 발생, 카메라 성능에 따라..)
+    # 정상적으로 이미지 가져오면 ret 값은 True, 
+    # 실패하면 ret 값은 False, frame 은 None
+
+    if not ret:
+        break
+        
+    cv2.imshow('frame', frame)
+    if cv2.waitKey() == 27:    # ESC 누르면 종료
+        break
+        
+cap.release()    # 카메라 종료하면 자동해제해주긴 하나...  가급적 명시하자
+cv2.destroyAllWindows()
+
+## 동영상으로 보이게 하기
+
+cap = cv2.VideoCapture(0)  # 카메라가 없거나, 혹은 다른 프로그램에서 사용하고 있다면 사용 불가.
+
+if not cap.isOpened():
+    print('cameara open failed')
+    sys.exit()
+    
+# VideoCapture.get() : 카메라, 비디오 장치 속성값 읽기
+print('Frame width: ',  round(cap.get(cv2.CAP_PROP_FRAME_WIDTH)))
+print('Frame height: ',  round(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    
+while True:
+    ret, frame = cap.read() 
+
+    if not ret:
+        break
+        
+    cv2.imshow('frame', frame)
+    if cv2.waitKey(1) == 27:    # 보통 카메라가 30fps 정도니까 한 frame 당 0.033sec
+                    # 그렇다고 굳이 33 을 입력할 필요 없이 1 만 넣어두셔도 , 카메라 성능만큼 fps 동작
+        break
+        
+cap.release()    # 카메라 종료하면 자동해제해주긴 하나...  가급적 명시하자
+cv2.destroyAllWindows()
+
+## 파일로부터 동영상 읽어오기
+
+cap = cv2.VideoCapture(os.path.join(base_path, 'vtest.avi'))  # 동영상 파일
+
+if not cap.isOpened():
+    print('cameara open failed')
+    sys.exit()
+    
+while True:
+    ret, frame = cap.read() 
+
+    if not ret:
+        break
+        
+    cv2.imshow('frame', frame)
+    if cv2.waitKey(30) == 27:  # waitKey(1)  1ms 로 하면 너무 빨리 재생된다
+                            # 적당한 속도를 주면. 재생 속도 조정된다.
+                            # 사실 동영상 파일은 자신만의 fps (frame per second) 가 존재한다
+                            # 몇 ms 단위로 출력할지 설정되어 있다.
+                            # 그러나, OpenCV 로 동영상 재생 프로그램 만드는 용도가 아니라면
+                            # 걍 짧게 값을 주어도 된다.
+        break
+        
+cap.release()    # 카메라 종료하면 자동해제해주긴 하나...  가급적 명시하자
+cv2.destroyAllWindows()
+
+#####  영상 처리 알고리즘 적용 예
+동영상에서 한장한장 뽑아낸 영상(frame) 에 여러가지 이미지 프로세싱 가능
+- OpenCV 는 다양한 기능(알고리즘) 제공
+- OpenCV 에서 제공하는 edge 검출 알고리즘 사용해보자 
+
+cap = cv2.VideoCapture(os.path.join(base_path, 'vtest.avi'))
+
+if not cap.isOpened():
+    print('cameara open failed')
+    sys.exit()
+    
+while True:
+    ret, frame = cap.read() 
+
+    if not ret:
+        break
+        
+    edge = cv2.Canny(frame, 50, 150)  # edge 검출    
+        
+    cv2.imshow('frame', frame)
+    cv2.imshow('edge', edge)
+    if cv2.waitKey(30) == 27: 
+        break
+        
+cap.release()
+cv2.destroyAllWindows()
+
+## 동영상 파일 저장하기 
+
+cap = cv2.VideoCapture(0)  # 카메라로부터
+
+if not cap.isOpened():
+    print('cameara open failed')
+    sys.exit()
+    
+# 동영상 저장을 위한 VideoWriter 객체 생성
+w = round(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+h = round(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+fps = cap.get(cv2.CAP_PROP_FPS)
+fourcc = cv2.VideoWriter_fourcc(*'DIVX')  # *'DIVX' ==> 'D', 'I', 'V', 'X'
+out = cv2.VideoWriter(os.path.join(base_path, 'out', 'output.avi'), fourcc, fps, (w, h))
+    
+while True:
+    ret, frame = cap.read() 
+
+    if not ret:
+        break
+        
+    edge = cv2.Canny(frame, 50, 150)  # edge 검출    
+    edge = cv2.cvtColor(edge, cv2.COLOR_GRAY2BGR)
+    out.write(edge)
+        
+    cv2.imshow('frame', frame)
+    cv2.imshow('edge', edge)
+    if cv2.waitKey(30) == 27: 
+        break
+        
+cap.release()
+out.release() 
+cv2.destroyAllWindows()
+
+---
