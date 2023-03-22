@@ -1,0 +1,133 @@
+# 한글 파일 이슈
+Windows 사용자
+
+- Python 에서 OpenCV 사용시 한글(utf-8) 을 처리하지 못하는 문제 발생.
+- 파일 경로에 한글이 있어도 읽기/쓰기 시 문제 발생
+- **imencode()** 함수를 사용하여 우회 해결
+
+import os
+import sys
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+
+base_path = r'D:\DevRoot\dataset\ComputerVision'
+
+# ↓ Google Colab 에서 
+# from google.colab.patches import cv2_imshow  # 이미지를 보여줄 경우 필요
+# from google.colab import files # 파일을 업로드 할때 필요
+
+def cv2_imshow(image):
+    cv2.imshow('image', image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
+def plt_imshow_bgr(bgr_img):
+    cvtImg = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
+    plt.imshow(cvtImg)
+    plt.show()
+
+file_name = '강아지.jpg'
+img = cv2.imread(os.path.join(base_path, file_name))
+cv2_imshow(img)
+
+#### 한글이름의 파일 읽기/쓰기용 함수
+
+def imread(filename, flags=cv2.IMREAD_COLOR, dtype=np.uint8):
+    try:
+        n = np.fromfile(filename, dtype)
+        img = cv2.imdecode(n, flags)
+        return img
+    except Exception as e:
+        print(e)
+        return None
+
+def imwrite(filename, img, params=None):
+    try:
+        ext = os.path.splitext(filename)[1]
+        result, n = cv2.imencode(ext, img, params)
+        
+        if result:
+            with open(filename, mode='w+b') as f:
+                n.tofile(f)
+                
+            return True
+        else:
+            return False
+        
+    except Exception as e:
+        print(e)
+        return False
+
+# 다시 시도
+file_name = '강아지.jpg'
+img = imread(os.path.join(base_path, file_name))
+cv2_imshow(img)
+
+# 한글이름 저장
+file_name = '강아지gray.jpg' 
+gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+cv2.imwrite(os.path.join(base_path, 'out', file_name), gray_img)
+
+저장된 결과 확인해보면 한글이 깨져있다
+![image-2.png](attachment:image-2.png)
+
+imwrite(os.path.join(base_path, 'out', file_name), gray_img)
+
+# OpenCV 로 한글 출력
+
+img_copy = img.copy()  # 사본작성
+
+# 글자출력
+cv2.putText(
+    img_copy,
+    '1234abcd', # 영어 알파벳은 괜찮다
+    org=(10, 40),
+    fontFace = cv2.FONT_HERSHEY_SIMPLEX,
+    fontScale = 1.5,
+    color = (123, 255, 0),
+    thickness = 2,
+)
+
+# 그런데 한글출력은?
+cv2.putText(
+    img_copy,
+    '안녕하세요', # 한글은
+    org=(10, 80),
+    fontFace = cv2.FONT_HERSHEY_SIMPLEX,
+    fontScale = 1.5,
+    color = (123, 255, 0),
+    thickness = 2,
+)
+
+conv_img = cv2.cvtColor(img_copy, cv2.COLOR_BGR2RGB)
+
+plt.figure(figsize=(15,7))
+plt.imshow(conv_img)
+plt.show()
+
+# OpenCV 를 이용하면서 한글이 깨지기 때문에
+# PIL 등을 이용해서 한글을 출력해본다
+
+from PIL import ImageFont, ImageDraw, Image
+
+img_data = img.copy()
+img_data = Image.fromarray(img_data)  # img 배열을 PIL가 처리 가능하게 변환
+
+draw = ImageDraw.Draw(img_data)
+font = ImageFont.truetype("fonts/gulim.ttc", 20)
+org = (50, 100)
+text = "Hello OpenCV!(한글)"
+draw.text(org, text, font=font, fill=(0, 0, 0))  # text 출력
+
+img_data = np.array(img_data)  # 다시 배열로 변환 -> OpenCV 가 다룰수 있도록
+
+# OpenCV 기준으로 text 크기를 구해 사각형 생성
+font = cv2.FONT_HERSHEY_SIMPLEX
+size, BaseLine = cv2.getTextSize(text, font, 1, 2)
+cv2.rectangle(img_data,org,(org[0]+size[0],org[1]+size[1]),(0,0,255))
+cv2.circle(img_data,org,3,(255,0,255),2)
+
+
+plt_imshow_bgr(img_data)
