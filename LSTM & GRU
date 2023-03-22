@@ -1,0 +1,257 @@
+# LSTM과 GRU 셀
+LSTM:Long Short-Term Memory
+
+GRU: Gated Recurrent Unit
+
+# 실행마다 동일한 결과를 얻기 위해 케라스에 랜덤 시드를 사용하고 텐서플로 연산을 결정적으로 만듭니다. 
+import tensorflow as tf
+
+tf.keras.utils.set_random_seed(42)
+
+
+tf.config.experimental.enable_op_determinism()
+# TF 로 하여금 deterministic 하게 동작하도록 설정함
+# -> 동일 input, 동일 HW 에서 동작시 매번 동일한 결과를 낼수 있도록 한다
+# https://www.tensorflow.org/api_docs/python/tf/config/experimental/enable_op_determinism
+
+# LSTM 신경망 훈련하기
+
+# 이전 예제 처럼 IMDB  리뷰 데이터를 로드하고 훈련세트와 검증세트로 나눔
+from tensorflow.keras.datasets import imdb
+from sklearn.model_selection import train_test_split
+
+(train_input, train_target), (test_input, test_target) = imdb.load_data(
+    num_words=500)
+
+train_input, val_input, train_target, val_target = train_test_split(
+    train_input, train_target, test_size=0.2, random_state=42)
+
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# ↓ 각 샘플의 길이를 100에 맞추고 부족할때는 패딩을 추가
+train_seq = pad_sequences(train_input, maxlen=100)
+val_seq = pad_sequences(val_input, maxlen=100)
+
+from tensorflow import keras
+
+# LSTM 을 사용한 순환층
+# SimpleRNN 을 LSTM 으로 바꾸기만 하면 된다.
+
+model = keras.Sequential()
+
+model.add(keras.layers.Embedding(500, 16, input_length=100))
+model.add(keras.layers.LSTM(8))
+model.add(keras.layers.Dense(1, activation='sigmoid'))
+
+model.summary()
+
+# SimpleRNN 은 모델 파라미터의 개수가 200개였다.
+# LSTM 셀에는 작은 셀이 4개 있으므로 정확히 x4배가 되어 800개가 됨.
+
+
+# 모델 컴파일, 학습
+# batch_size, epoch 는 동일
+
+rmsprop = keras.optimizers.RMSprop(learning_rate=1e-4)
+model.compile(optimizer=rmsprop, loss='binary_crossentropy', 
+              metrics=['accuracy'])
+
+checkpoint_cb = keras.callbacks.ModelCheckpoint('best-lstm-model.h5', 
+                                                save_best_only=True)
+early_stopping_cb = keras.callbacks.EarlyStopping(patience=3,
+                                                  restore_best_weights=True)
+
+history = model.fit(train_seq, train_target, epochs=100, batch_size=64,
+                    validation_data=(val_seq, val_target),
+                    callbacks=[checkpoint_cb, early_stopping_cb])
+
+import matplotlib.pyplot as plt
+
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.xlabel('epoch')
+plt.ylabel('loss')
+plt.legend(['train', 'val'])
+plt.show()
+
+# ↑ 관찰
+#  train loss 와 val loss 의 격차가 이전 기본순환층보다 좁혀졌슴을 알수 있다.
+# 기분순환층 보다는  LSTM 이 overfit(과작헙) 을 억제하면서 훈련을 잘 수행한 것으로 보인다
+
+# 만약 overfit 을 더 강하게 제어하려면 어케 해야 하나?
+
+
+# 순환층에 Dropout 적용하기
+
+# 완전연결신경망과 CNN 에서는 Dropout 클래스를 사용해서 dropout 을 적용했었다
+# 순환층은 '자체적으로 dropout 기능을 제공'
+
+# SimpleRNN, LSTM 클래스에 제공하는 2개의 dropout 매개변수
+#   dropout= : 셀의 입력에 dropout 적용
+#   recurrent_dropout= : 순환되는 은닉상태에 dropout 적용
+#                        ※ recurrent_dropout 는 GPU를 통한 훈련 못함..
+
+#  아래 예제에선 dropout= 만 사용함..
+
+model2 = keras.Sequential()
+model2.add(keras.layers.Embedding(500, 16, input_length=100))
+model2.add(keras.layers.LSTM(8, dropout=0.3))  # dropout=
+model2.add(keras.layers.Dense(1, activation='sigmoid'))
+
+import os
+base_path = r'D:\DevRoot\dataset\RNN'
+
+# 이전과 동일한 조건으로 훈련해보자
+rmsprop = keras.optimizers.RMSprop(learning_rate=1e-4)
+model2.compile(optimizer=rmsprop, loss='binary_crossentropy', 
+               metrics=['accuracy'])
+
+checkpoint_cb = keras.callbacks.ModelCheckpoint(os.path.join(base_path, 'best-dropout-model.h5'), 
+                                                save_best_only=True)
+early_stopping_cb = keras.callbacks.EarlyStopping(patience=3,
+                                                  restore_best_weights=True)
+
+history = model2.fit(train_seq, train_target, epochs=100, batch_size=64,
+                     validation_data=(val_seq, val_target),
+                     callbacks=[checkpoint_cb, early_stopping_cb])
+
+# 0.4342  -> 0.4278   : val loss 가 좀더 향상되었다
+
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.xlabel('epoch')
+plt.ylabel('loss')
+plt.legend(['train', 'val'])
+plt.show()
+
+# 2개의 순환층 연결하기
+
+### 순환층 연결시 주의!
+- 순환층의 은닉상태는 샘플의 마지막 스텝에 대한 은닉 상태만 다음층으로 전달한다
+- 그러나, 순환층을 쌓게 되면 모든 순환층에는 순차 데이터가 필요하다.
+- 따라서 
+    - 앞쪽의 순환층은 '모든 타임스텝'에 대한 은닉상태를 출력해야 하고, 
+    - 마지막 순환층만 '마지막 타임스텝의 은닉상태'를 출력해야 한다
+
+# keras의 순환층에서 '모든타임스텝의 은닉상태' 를 출력하려면 마지막을 제외한 모든 순환층에 
+# return_sequences=True 를 지정해준다
+
+model3 = keras.Sequential()
+
+model3.add(keras.layers.Embedding(500, 16, input_length=100))
+model3.add(keras.layers.LSTM(8, dropout=0.3, return_sequences=True))  # ★★★
+model3.add(keras.layers.LSTM(8, dropout=0.3))
+model3.add(keras.layers.Dense(1, activation='sigmoid'))
+
+model3.summary()
+
+"""
+Model: "sequential_4"
+_________________________________________________________________
+ Layer (type)                Output Shape              Param #   
+=================================================================
+ embedding_4 (Embedding)     (None, 100, 16)           8000      
+                                                                 
+ lstm_5 (LSTM)               (None, 100, 8)            800       
+            # 첫번째 LSTM 층이 모든 타입스텝 (100개) 의 은닉상태를 출력하기 때문에
+            # 출력크기가 (?, 100, 8) 로 표시되었습니다.
+                                                                                 
+ lstm_6 (LSTM)               (None, 8)                 544       
+            # 마지막 LSTM 층의 출력크기는 마지막 타임스텝의 은닉상태만 출력하기 때문에
+            # 출력크기가 (?, 8) 이다.
+                                                                 
+ dense_2 (Dense)             (None, 1)                 9         
+                                                                 
+=================================================================
+Total params: 9,353
+Trainable params: 9,353
+Non-trainable params: 0
+_________________________________________________________________
+"""
+None
+
+base_path
+
+rmsprop = keras.optimizers.RMSprop(learning_rate=1e-4)
+model3.compile(optimizer=rmsprop, loss='binary_crossentropy', 
+               metrics=['accuracy'])
+
+checkpoint_cb = keras.callbacks.ModelCheckpoint(os.path.join(base_path, 'best-2rnn-model.h5'), 
+                                                save_best_only=True)
+early_stopping_cb = keras.callbacks.EarlyStopping(patience=3,
+                                                  restore_best_weights=True)
+
+history = model3.fit(train_seq, train_target, epochs=100, batch_size=64,
+                     validation_data=(val_seq, val_target),
+                     callbacks=[checkpoint_cb, early_stopping_cb])
+
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.xlabel('epoch')
+plt.ylabel('loss')
+plt.legend(['train', 'val'])
+plt.show()
+
+# GRU 신경망
+
+model4 = keras.Sequential()
+
+model4.add(keras.layers.Embedding(500, 16, input_length=100))
+model4.add(keras.layers.GRU(8))
+model4.add(keras.layers.Dense(1, activation='sigmoid'))
+
+model4.summary()
+
+"""
+Model: "sequential_5"
+_________________________________________________________________
+ Layer (type)                Output Shape              Param #   
+=================================================================
+ embedding_5 (Embedding)     (None, 100, 16)           8000      
+                                                                 
+ gru (GRU)                   (None, 8)                 624       
+ 
+      # paramer 개수
+     # GRU 셀에는 3개의 작은셀이 있다
+     # 작은셀에는 입력과 은닉상태(h) 를 곱하는 weight 와 bias 가 있다.
+     # 입력에 곱하는 weight 는 16 * 8 = 128개
+     # 은닉상태에 곱하는 weight 는 8 * 8 = 64개
+     # bias 가 뉴런마다 하나씩 있으므로 8개
+     #  모두 더하면 128 + 64 + 8 = 200개
+     #  이런 작은 셀이 3개 있으므로 200 * 3 => 600개 !   (그런데 결과는 624개?)
+
+     # TF GRU 는 내부적으로 작은 셀마다 하나의 bias 가 추가된다
+     #    작은셀3개 x 8개 뉴런 = 24개
+                                                                 
+ dense_3 (Dense)             (None, 1)                 9         
+                                                                 
+=================================================================
+Total params: 8,633
+Trainable params: 8,633
+Non-trainable params: 0
+_________________________________________________________________
+"""
+None
+
+# GRU 셀을 사용한 순환신경망 훈련 
+# 훈련방법은 이전과 동일
+
+rmsprop = keras.optimizers.RMSprop(learning_rate=1e-4)
+model4.compile(optimizer=rmsprop, loss='binary_crossentropy', 
+               metrics=['accuracy'])
+
+checkpoint_cb = keras.callbacks.ModelCheckpoint(os.path.join(base_path, 'best-gru-model.h5'), 
+                                                save_best_only=True)
+early_stopping_cb = keras.callbacks.EarlyStopping(patience=3,
+                                                  restore_best_weights=True)
+
+history4 = model4.fit(train_seq, train_target, epochs=100, batch_size=64,
+                     validation_data=(val_seq, val_target),
+                     callbacks=[checkpoint_cb, early_stopping_cb])
+
+plt.plot(history4.history['loss'])
+plt.plot(history4.history['val_loss'])
+plt.xlabel('epoch')
+plt.ylabel('loss')
+plt.legend(['train', 'val'])
+plt.show()
