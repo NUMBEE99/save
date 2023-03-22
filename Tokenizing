@@ -1,0 +1,179 @@
+# 어휘소 분석 / 형태소 분석
+
+
+## 형태소 분석
+KoNLPy는 다음과 같은 다양한 형태소 분석, 태깅 라이브러리를 파이썬에서 쉽게 사용할 수 있도록 모아놓았다.
+
+- Hannanum: 한나눔. KAIST Semantic Web Research Center 개발.
+
+    - http://semanticweb.kaist.ac.kr/hannanum/
+
+- Kkma: 꼬꼬마. 서울대학교 IDS(Intelligent Data Systems) 연구실 개발.
+
+    - http://kkma.snu.ac.kr/
+
+- Komoran: 코모란. Shineware에서 개발.
+
+    - https://github.com/shin285/KOMORAN
+
+- Mecab: 메카브. 일본어용 형태소 분석기를 한국어를 사용할 수 있도록 수정.
+
+    - https://bitbucket.org/eunjeon/mecab-ko
+
+- Open Korean Text: 오픈 소스 한국어 분석기. 과거 트위터 형태소 분석기.
+
+    - https://github.com/open-korean-text/open-korean-text
+
+# konlpy 동작확인
+
+from konlpy.tag import Okt
+
+okt = Okt()
+
+# 공통적으로 제공하는 메소드
+- nouns(text) : 명사 추출하려 리턴
+
+- morphs(text) : 형태소 추출하여 리턴
+
+- pos(text) : 품사(part of speech) 부착한 결과 리턴
+
+text = "아버지가방에들어가시다"
+
+okt.pos(text)
+
+okt.pos(text, stem=True)
+
+# stem 옵션 : 원형으로 찾아줌
+
+okt.pos("그래욬ㅋㅋ?")
+
+okt.pos("그래욬ㅋㅋ?", norm=True)
+
+# konlpy 품사 태깅
+# https://docs.google.com/spreadsheets/d/1OGAjUvalBuX-oZvZ_-9tEfYD2gQe7hTGsgUpiiBSXI8/edit#gid=0
+
+# Okt 의 경우
+# Noun	명사
+# Verb	동사
+# Adjective	형용사
+# Determiner	관형사 (ex: 새, 헌, 참, 첫, 이, 그, 저)
+# Adverb	부사 (ex: 잘, 매우, 빨리, 반드시, 과연)
+# Conjunction	접속사
+# Exclamation	감탄사 (ex:  헐, 어머나, 얼씨구)
+# Josa	조사 (ex: 의, 에, 에서)
+# PreEomi	선어말어미 (ex: 었)
+# Eomi	어미 (ex: 다, 요, 여, 하댘ㅋㅋ)
+# Suffix	접미사
+# Punctuation	구두점
+# Foreign	외국어, 한자 및 기타기호
+# Alpha	알파벳
+# Number	숫자
+# Unknown	미등록어
+# KoreanParticle	(ex: ㅋㅋ)
+# Hashtag	트위터 해쉬태그 (ex: #히히)
+# ScreenName	트위터 아이디 (ex: @echojuliett)
+# Email	이메일 주소
+# URL	웹주소
+
+
+
+# 명사의 출현빈도 
+
+import codecs
+from bs4 import BeautifulSoup
+from konlpy.tag import Okt
+import os
+
+filepath = r'D:\DevRoot\dataset\chatbot\BEXX0003.txt'
+fp = codecs.open(filepath, 'r', encoding='utf-16')
+soup = BeautifulSoup(fp, "html.parser")
+body = soup.select_one("body > text")
+text = body.getText()
+
+text
+
+okt = Okt()
+word_dic = {}
+lines = text.split('\n') 
+
+for line in lines:
+    nounlist = okt.nouns(line)
+    for noun in nounlist:
+        if not (noun in word_dic):
+            word_dic[noun] = 0
+            
+        word_dic[noun] += 1
+
+# word_dic
+
+##### 많이 등장한 명사
+
+sorted(word_dic.items(), key=lambda x: x[1], reverse=True)
+
+
+
+from konlpy.tag import Kkma
+kkma = Kkma()
+
+text = "아버지가방에들어가신다."
+
+kkma.pos(text)  # 형태소 + 품사
+
+# 형태소 추출
+kkma.morphs(text)
+
+kkma.nouns(text)
+
+# 문장 분리
+sentences = "오늘 날씨는 어때요? 내일은 덥다던데."
+
+kkma.sentences(sentences)
+
+
+
+# Komoran 분석기
+from konlpy.tag import Komoran
+
+komoran = Komoran()
+
+komoran.pos(text)
+
+komoran.pos('아버지가 방에 들어가신다')
+
+okt
+
+text = "오늘 날씨가 좋아욬ㅋㅋㅋ"
+
+# 정규화
+okt.normalize(text)  # 문장을 정규화 한다
+# 화자가 챗봇에 질의할 때는 구어체나 오타가 섞인 채 입력하는 경우가 많다.  
+# 이때 입력된 문장을 정규화 하면 성능 향상에 도움이 된다
+
+
+# 어구 추출
+okt.phrases(text)
+
+#### 사용자 사전 구축
+
+일반적으로 챗봇 사용자들은 딱딱한 구어체나 문어체를 사용하지 않는다.
+
+새롭게 생겨나는 단어나 문장은 형태소 분석기에서 인식이 안 되는 경우가 많다.
+
+형태소분석기 모델은 '기존의' 많은 문장들을 기반으로 학습하여 개발했기에,  새로운 형태의 단어와 문장 인식율은 떨어진다.
+
+이를 해결하기 위해 대부분의 형태소 분석기들은 **사용자 사전**을 추가할수 있도록 구성되어 있다.
+
+text = "우리 챗봇은 엔엘피을 좋아해"
+
+komoran.pos(text)
+
+"""
+엔엘피NNG
+"""
+
+komoran = Komoran(userdic='./user_dic.tsv')
+
+komoran.pos(text)
+
+komoran.pos('연말 연시')
+
