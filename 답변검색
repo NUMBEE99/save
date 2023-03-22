@@ -1,0 +1,217 @@
+# 답변검색
+
+### 데이터베이스 제어 모듈
+
+##### /utils/Database.py 생성
+
+import pymysql
+import pymysql.cursors
+import logging
+
+
+class Database:
+    '''
+    database 제어
+    '''
+
+    def __init__(self, host, user, password, db_name, charset='utf8'):
+        self.host = host
+        self.user = user
+        self.password = password
+        self.charset = charset
+        self.db_name = db_name
+        self.conn = None
+
+    # DB 연결
+    def connect(self):
+        if self.conn != None:
+            return
+
+        self.conn = pymysql.connect(
+            host=self.host,
+            user=self.user,
+            password=self.password,
+            db=self.db_name,
+            charset=self.charset
+        )
+
+    # DB 연결 닫기
+    def close(self):
+        if self.conn is None:
+            return
+
+        if not self.conn.open:
+            self.conn = None
+            return
+        self.conn.close()
+        self.conn = None
+
+    # SQL 구문 실행 (주로 DML)
+    def execute(self, sql):
+        last_row_id = -1
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute(sql)
+            self.conn.commit()
+            last_row_id = cursor.lastrowid
+            # logging.debug("excute last_row_id : %d", last_row_id)
+        except Exception as ex:
+            logging.error(ex)
+
+        finally:
+            return last_row_id
+
+    # SELECT 구문 실행 후, 단 1개의 데이터 ROW만 불러옴
+    def select_one(self, sql):
+        result = None
+
+        try:
+            with self.conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute(sql)
+                result = cursor.fetchone()
+        except Exception as ex:
+            logging.error(ex)
+
+        finally:
+            return result
+
+    # SELECT 구문 실행 후, 전체 데이터 ROW만 불러옴
+    def select_all(self, sql):
+        result = None
+
+        try:
+            with self.conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute(sql)
+                result = cursor.fetchall()
+        except Exception as ex:
+            logging.error(ex)
+
+        finally:
+            return result
+
+
+
+### 답변검색 모듈
+
+그림 8-2 챗봇엔진 답변 검색 과정
+
+![image.png](attachment:image.png)
+
+#### /utils/FindAnswer.py
+
+class FindAnswer:
+    
+    # Database 인스턴스 객체로 생성
+    def __init__(self, db):
+        self.db = db
+        
+    # 답변 검색
+    def search(self, intent_name, ner_tags):
+        # 의도명, 개체명으로 답변 검색
+        sql = self._make_query(intent_name, ner_tags)
+        answer = self.db.select_one(sql)
+
+        # 검색되는 답변이 없으면 의도명만 검색
+        if answer is None:
+            sql = self._make_query(intent_name, None)
+            answer = self.db.select_one(sql)
+
+        return (answer['answer'], answer['answer_image'])
+        
+    
+    # 검색 쿼리 생성
+    def _make_query(self, intent_name, ner_tags):
+        sql = "select * from chatbot_train_data"
+        
+        # intent_name 만 주어진 경우
+        if intent_name != None and ner_tags == None:
+            sql = sql + " where intent='{}' ".format(intent_name)
+
+        # intent_name 과 개체명도 주어진 경우
+        elif intent_name != None and ner_tags != None:
+            where = ' where intent="%s" ' % intent_name
+            if (len(ner_tags) > 0):
+                where += 'and ('
+                for ne in ner_tags:
+                    where += " ner like '%{}%' or ".format(ne)
+                where = where[:-3] + ')'
+            sql = sql + where
+
+        # 동일한 답변이 2개 이상인 경우, 랜덤으로 선택
+        sql = sql + " order by rand() limit 1"
+        return sql        
+    
+    # NER 태그를 실제 입력된 단어로 변환
+    def tag_to_word(self, ner_predicts, answer):
+        for word, tag in ner_predicts:
+            
+            # 변환해야하는 태그가 있는 경우 추가
+            if tag == 'B_FOOD' or tag == 'B_DT' or tag == 'B_TI':
+                answer = answer.replace(tag, word)  # 태그를 입력된 단어로 변환
+                
+        answer = answer.replace('{', '')
+        answer = answer.replace('}', '')
+        return answer
+    
+    
+
+## 테스트
+
+from chatbot.config.DatabaseConfig import *
+from chatbot.utils.Database import Database
+from chatbot.utils.Preprocess import Preprocess
+
+import tensorflow as tf
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras import preprocessing
+
+# 전처리 객체 생성
+p = Preprocess(word2index_dic='chatbot/train_tools/dict/chatbot_dict.bin',
+               userdic='chatbot/utils/user_dic.tsv')
+
+
+DB_HOST, DB_USER, DB_PASSWORD, DB_NAME
+
+# 질문/답변 학습 디비 연결 객체 생성
+db = Database(
+    host=DB_HOST, user=DB_USER, password=DB_PASSWORD, db_name=DB_NAME
+)
+db.connect()    # 디비 연결
+
+# 챗봇 엔진에 질의할 문장
+query = "오전에 탕수육 10개 주문합니다"
+
+##### 의도분류
+
+# 의도 분류
+from chatbot.models.intent.IntentModel import IntentModel
+intent = IntentModel(model_name='chatbot/models/intent/intent_model.h5', preprocess=p)
+
+predict = intent.predict_class(query)
+predict
+
+
+intent_name = intent.labels[predict]
+intent_name
+
+##### 개체명 인식 NER
+
+from chatbot.models.ner.NerModel import NerModel
+ner = NerModel(model_name='chatbot/models/ner/ner_model.h5', preprocess=p)
+
+predicts = ner.predict(query)
+predicts
+
+ner_tags = ner.predict_tags(query)
+ner_tags
+
+##### 답변검색
+
+try:
+    f = FindAnswer(db)
+    answer_text, answer_image = f.search(intent_name, ner_tags)
+    answer = f.tag_to_word(predicts, answer_text)
+except:
+    answer = "죄송해요 무슨 말인지 모르겠어요"
+
+print("답변 : ", answer)
