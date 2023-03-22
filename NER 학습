@@ -1,0 +1,198 @@
+# 개체명 인식(NER) 모델 학습
+
+
+## 개체명 인식 모델 학습
+
+# 필요한 import 하기
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.keras import preprocessing
+from sklearn.model_selection import train_test_split
+import numpy as np
+from chatbot.utils.Preprocess import Preprocess
+import os
+
+# 학습 파일 불러오기
+def read_file(file_name):
+    sents = []
+    with open(file_name, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        for idx, l in enumerate(lines):
+            if l[0] == ';' and lines[idx + 1][0] == '$':
+                this_sent = []
+            elif l[0] == '$' and lines[idx - 1][0] == ';':
+                continue
+            elif l[0] == '\n':
+                sents.append(this_sent)
+            else:
+                this_sent.append(tuple(l.split()))
+    return sents
+
+# 전처리 모듈
+p = Preprocess(word2index_dic=os.path.join('chatbot/train_tools/dict', 'chatbot_dict.bin'),
+               userdic=os.path.join('chatbot/utils', 'user_dic.tsv'))
+
+
+# ① 학습용 말뭉치 데이터를 불러옴
+corpus = read_file(os.path.join('chatbot/models/ner', 'ner_train.txt'))
+
+len(corpus)
+
+corpus[:20]
+
+# ② 위에서 불러온 말뭉치 데이터에서 단어(w[1])와 BIO 태그(w[3])만 불러와 학습용 데이터셋 생성
+
+sentences, tags = [], []
+for t in corpus:
+    tagged_sentence = []
+    sentence, bio_tag = [], []
+    for w in t:
+        tagged_sentence.append((w[1], w[3]))
+        sentence.append(w[1])
+        bio_tag.append(w[3])
+    
+    sentences.append(sentence)
+    tags.append(bio_tag)
+
+
+
+sentences[:10]
+
+tags[:10]
+
+print("샘플 크기 : \n", len(sentences))
+print("0번 째 샘플 단어 시퀀스 : \n", sentences[0])
+print("0번 째 샘플 bio 태그 : \n", tags[0])
+print("샘플 단어 시퀀스 최대 길이 :", max(len(l) for l in sentences))
+print("샘플 단어 시퀀스 평균 길이 :", (sum(map(len, sentences))/len(sentences)))
+# 평균의 경우. 나중에 시퀀스 벡터 크기 설정시 참조됨.
+
+# ③ 토크나이저 정의
+# 단어 시퀀스의 경우 Preprocess 객체에서 생성하기 때문에 예제에서는 BIO 태그용 Tokenizer 객체 생성
+tag_tokenizer = preprocessing.text.Tokenizer(lower=False) # 태그 정보는 lower=False 소문자로 변환하지 않는다.
+tag_tokenizer.fit_on_texts(tags)  # 나중에 texts_to_sequences() 등을 수행하기 전에 꼭
+
+
+# 생성된 사전 리스트를 이용해 단어와 태그 사전의 크기를 정의
+
+# 확인
+p.word_index
+
+tag_tokenizer.word_index
+
+# 단어사전 및 태그 사전 크기
+vocab_size = len(p.word_index) + 1
+tag_size = len(tag_tokenizer.word_index) + 1
+print("BIO 태그 사전 크기 :", tag_size)
+print("단어 사전 크기 :", vocab_size)
+
+# 결과]
+# BIO 태그 사전 크기 : 10
+# 단어 사전 크기 : 17752
+
+# 모델에 '입력' 될 문장의 경우 Preprocess 에서 생성한 단어 인덱스 시퀀스를 사용한다
+# BIO 태그는 ③ 에서 만들어진 사전 데이터를 시퀀스 번호 형태로 인코딩 한다
+
+# ④ 학습용 단어 시퀀스 생성
+x_train = [p.get_wordidx_sequence(sent) for sent in sentences]
+y_train = tag_tokenizer.texts_to_sequences(tags)
+
+index_to_ner = tag_tokenizer.index_word # 시퀀스 인덱스를 NER로 변환 하기 위해 사용
+index_to_ner[0] = 'PAD'    # 좀있다 패딩을 넣어야 하기때문에 추가함
+
+
+len(x_train)
+
+x_train[:10]
+
+len(y_train)
+
+y_train[:10]
+
+index_to_ner  # 0: 'PAD'  가 추가되었다
+
+# 개체명 인식 모델의 입출력 벡터 크기를 동일하게 맞추기 위해 시퀀스 패딩 작업 수행
+# 벡터 크기는 ④ 에서 계산한 단어 시퀀스의 평균 길이보다 넉넉하게 40으로 정의
+
+# ⑤ 시퀀스 패딩 처리
+max_len = 40  # 시퀀스 벡터 크기는 위에서 계산해본 평균 길이보다는 넉넉하게 40으로 설정
+x_train = preprocessing.sequence.pad_sequences(x_train, padding='post', maxlen=max_len)
+y_train = preprocessing.sequence.pad_sequences(y_train, padding='post', maxlen=max_len)
+
+
+print(x_train.shape)
+x_train
+
+print(y_train.shape)   # (61999, 40)
+y_train
+
+# 학습 데이터와 테스트 데이터를 8:2의 비율로 분리
+# sklearn.model_selection 모듈의 train_test_split() 함수를 이용 (간단하게 활용할수 있다)
+
+# ⑥ 학습 데이터와 테스트 데이터를 8:2의 비율로 분리
+# ★ 한번만 실행하기 ★
+x_train, x_test, y_train, y_test = train_test_split(x_train, y_train,
+                                                    test_size=.2,
+                                                    random_state=1234)
+
+
+x_train.shape, x_test.shape, y_train.shape, y_test.shape
+
+y_train
+
+tag_size
+
+# 출력 데이터를 one-hot encoding
+# ★ 한번만 실행할것!
+y_train = tf.keras.utils.to_categorical(y_train, num_classes=tag_size)  # tag_size. BIO 태그 사전 크기, 
+y_test = tf.keras.utils.to_categorical(y_test, num_classes=tag_size)    # 현재 tag_size 는 10 이다
+
+y_train.shape, y_test.shape
+
+print("학습 샘플 시퀀스 형상 : ", x_train.shape)
+print("학습 샘플 레이블 형상 : ", y_train.shape)
+print("테스트 샘플 시퀀스 형상 : ", x_test.shape)
+print("테스트 샘플 레이블 형상 : ", y_test.shape)
+
+
+# ⑦ 모델 정의 (Bi-LSTM)
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Embedding, Dense, TimeDistributed, Dropout, Bidirectional
+from tensorflow.keras.optimizers import Adam
+
+model = Sequential()
+model.add(Embedding(input_dim=vocab_size, output_dim=30, input_length=max_len, mask_zero=True))
+model.add(Bidirectional(LSTM(200, return_sequences=True, dropout=0.50, recurrent_dropout=0.25)))
+model.add(TimeDistributed(Dense(tag_size, activation='softmax')))
+model.compile(loss='categorical_crossentropy', optimizer=Adam(0.01), metrics=['accuracy'])
+
+model.fit(x_train, y_train, batch_size=128, epochs=10)
+
+# 모델 저장
+model_file = os.path.join('chatbot/models/ner', 'ner_model.h5')
+model.save(model_file)
+
+
+
+# F1 Score 계산
+
+# 시퀀스를 NER 태그로 변환
+def sequences_to_tag(sequences):  # 예측값을 index_to_ner를 사용하여 태깅 정보로 변경하는 함수.
+    result = []
+    for sequence in sequences:  # 전체 시퀀스로부터 시퀀스를 하나씩 꺼낸다.
+        temp = []
+        for pred in sequence:  # 시퀀스로부터 예측값을 하나씩 꺼낸다.
+            pred_index = np.argmax(pred)  # 예를 들어 [0, 0, 1, 0 ,0]라면 1의 인덱스인 2를 리턴한다.
+            temp.append(index_to_ner[pred_index].replace("PAD", "O"))  # 'PAD'는 'O'로 변경
+        result.append(temp)
+    return result
+
+from seqeval.metrics import f1_score, classification_report
+
+y_predicted = model.predict(x_test)
+pred_tags = sequences_to_tag(y_predicted) # 예측된 NER
+test_tags = sequences_to_tag(y_test)    # 실제 NER
+print(classification_report(test_tags, pred_tags))
+
+# f1_score() 함수 만으로 f1 score 값만 출력 가능
+print("F1-score: {:.1%}".format(f1_score(test_tags, pred_tags)))
