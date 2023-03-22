@@ -1,0 +1,605 @@
+# 명함 검출 및 인식 
+
+
+### 명함검출 및 인식 진행과정 
+
+
+
+import os
+import sys
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+
+base_path = r'D:\DevRoot\dataset\ComputerVision\namecard'
+
+# ↓ Google Colab 에서 
+# from google.colab.patches import cv2_imshow  # 이미지를 보여줄 경우 필요
+# from google.colab import files # 파일을 업로드 할때 필요
+
+def cv2_imshow(image):
+    cv2.imshow('image', image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
+def plt_imshow_bgr(bgr_img):
+    cvtImg = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
+    plt.imshow(cvtImg)
+    plt.show()
+
+# 이번 예제에 사용할 영상(이미지) 3장 읽어오기
+src1 = cv2.imread(os.path.join(base_path, 'namecard1.jpg'))
+src2 = cv2.imread(os.path.join(base_path, 'namecard2.jpg'))
+src3 = cv2.imread(os.path.join(base_path, 'namecard3.jpg'))
+
+
+if src1 is None or src2 is None or src3 is None:
+    print('image load failed')
+    sys.exit()
+
+src1.shape, src2.shape, src3.shape
+
+# matplotlib 으로 확인해보기
+namecard1 = cv2.cvtColor(src1, cv2.COLOR_BGR2RGB)
+namecard2 = cv2.cvtColor(src2, cv2.COLOR_BGR2RGB)
+namecard3 = cv2.cvtColor(src3, cv2.COLOR_BGR2RGB)
+
+plt.figure(figsize=(15,7))
+plt.subplot(131), plt.title('namecard1'), plt.imshow(namecard1)
+plt.subplot(132), plt.title('namecard2'), plt.imshow(namecard2)
+plt.subplot(133), plt.title('namecard3'), plt.imshow(namecard3)
+plt.show()
+
+## Resize 
+
+src_resized1 = cv2.resize(src1, (640, 480))
+print(src_resized1.shape)
+
+plt_imshow_bgr(src_resized1)
+
+# resize() 의 scale factor 로 지정 가능
+# 이때 dsize (0,0) 을 지정해주어야 한다
+
+src_resized1 = cv2.resize(src1, (0, 0), fx=0.5, fy=0.5)
+src_resized2 = cv2.resize(src2, (0, 0), fx=0.5, fy=0.5)
+src_resized3 = cv2.resize(src3, (0, 0), fx=0.5, fy=0.5)
+
+# cv2.imshow('src', src_resized1)
+# cv2.waitKey()
+# cv2.destroyAllWindows()
+
+print(src_resized1.shape, src_resized2.shape, src_resized3.shape)
+
+plt.figure(figsize=(15,7))
+plt.subplot(131), plt.title('namecard1'), 
+plt.imshow(cv2.cvtColor(src_resized1, cv2.COLOR_BGR2RGB))
+plt.subplot(132), plt.title('namecard2'), 
+plt.imshow(cv2.cvtColor(src_resized2, cv2.COLOR_BGR2RGB))
+plt.subplot(133), plt.title('namecard3'), 
+plt.imshow(cv2.cvtColor(src_resized3, cv2.COLOR_BGR2RGB))
+plt.show()
+
+# ※ 실제로 문자 인식할때는 오히려 이미지를 키우는 경우가 많다.
+
+
+
+# 영상의 이진화 (Binarization)
+영상의 픽셀 값을 0 또는 1(혹은 255)로 만드는 연산
+- 배경(background) vs. 객체(object)
+- 관심 영역 vs. 비관심 영역
+
+
+
+##### 그레이 스케일 영상의 이진화
+
+
+## 우선 grayscale 화 하기 
+
+# 일단 graysacle 로 만든다음 이진화 하는게 일반적이다
+# grayscale 은 한 pixel 당 1byte 라서.
+# 이미지 프로세싱 과정에서 적은 용량을 차지하는 지라, 
+# 꼭 컬러 정보가 필요없는 경우에는 grayscale 로 변환한뒤 처리하는게 일반적이다
+
+# 실제 스마트폰에 들어가 있는 얼굴 인식 프로그램들이 컬러값을 거의 사용안합니다
+# 내부적으로 grayscale 로 변환하여 검증합니다
+
+src_gray1 = cv2.cvtColor(src_resized1, cv2.COLOR_BGR2GRAY)
+src_gray2 = cv2.cvtColor(src_resized2, cv2.COLOR_BGR2GRAY)
+src_gray3 = cv2.cvtColor(src_resized3, cv2.COLOR_BGR2GRAY)
+
+# cv2.imshow('src', src_gray1)
+# cv2.waitKey()
+# cv2.destroyAllWindows()
+
+plt.figure(figsize=(15,7))
+
+plt.subplot(131), plt.title('namecard1'), 
+plt.imshow(src_gray1, cmap='gray')
+
+plt.subplot(132), plt.title('namecard2'), 
+plt.imshow(src_gray2, cmap='gray')
+
+plt.subplot(133), plt.title('namecard3'), 
+plt.imshow(src_gray3, cmap='gray')
+
+plt.show()
+
+# 이진화 
+threshold() 함수
+
+_, src_bin1 = cv2.threshold(src_gray1, 130, 255, cv2.THRESH_BINARY)
+
+plt_imshow_bgr(src_bin1)
+# cv2_imshow(src_bin1)
+
+# namecard1 과 namecard2 는 명함차이가 있었었다
+
+plt.figure(figsize=(15,7))
+plt.subplot(121), plt.title('namecard1'), plt.imshow(namecard1)
+plt.subplot(122), plt.title('namecard2'), plt.imshow(namecard2)
+plt.show()
+
+# 동일한 threshold 를 두개의 이미지에 적용해보면?
+
+# thresh : 130,  maxval: 255
+
+_, src_bin1 = cv2.threshold(src_gray1, 130, 255, cv2.THRESH_BINARY)
+_, src_bin2 = cv2.threshold(src_gray2, 130, 255, cv2.THRESH_BINARY)
+
+# cv2.imshow('src', src_bin2)
+# cv2.waitKey()
+# cv2.destroyAllWindows()
+
+plt.figure(figsize=(15,7))
+plt.subplot(121), plt.title('namecard1'), plt.imshow(src_bin1, cmap='gray')
+plt.subplot(122), plt.title('namecard2'), plt.imshow(src_bin2, cmap='gray')
+plt.show()
+
+# histogram 확인
+plt.figure(figsize=(15,3))
+plt.subplot(121), plt.title('namecard1'), 
+plt.hist(src_gray1.ravel(), bins=256, range=[0, 256])
+plt.subplot(122), plt.title('namecard2'), 
+plt.hist(src_gray2.ravel(), bins=256, range=[0, 256])
+plt.show()
+
+# threshold 주는게 사실 까다롭다
+# 경험도 필요하고..
+
+# 보통은 '자동'으로 판단하게끔 한다
+# 어떻게?
+
+# 바로 '자동 입계값' 결정 방법!!
+
+### Otsu threshold 를 사용한 이진화
+자동 임계값 설정
+
+# Otsu 방법으로 threshold 를 결정하게 됨.
+# Otsu 가 결정한 threshold 값을 리턴값으로 받아올수 있다
+
+# 이전 결과와 비교해보자
+_, src_before = cv2.threshold(src_gray2, 130, 255, cv2.THRESH_BINARY)
+
+th, src_after = cv2.threshold(src_gray2, 
+             0,  # thresh 값을 0으로 둔다 (이는 Otsu 에 의해 결정될 것이다.)
+              255,
+              cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+print(th)  # <- Otsu 가 결정한 threshold 값 확인
+
+plt.figure(figsize=(15,7))
+plt.subplot(121), plt.title('before'), plt.imshow(src_before, cmap='gray')
+plt.subplot(122), plt.title('after'), plt.imshow(src_after, cmap='gray')
+plt.show()
+
+
+
+# TODO 
+
+th1, src_bin1 = cv2.threshold(src_gray1, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+th2, src_bin2 = cv2.threshold(src_gray2, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU) 
+th3, src_bin3 = cv2.threshold(src_gray3, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU) 
+
+print(th1, th2, th3) # <- 결정된 threshold 값 확인
+
+plt.figure(figsize=(15,13))
+plt.subplot(331), plt.title('namecard1') 
+plt.imshow(cv2.cvtColor(src_resized1, cv2.COLOR_BGR2RGB))
+plt.subplot(332), plt.title('namecard2')
+plt.imshow(cv2.cvtColor(src_resized2, cv2.COLOR_BGR2RGB))
+plt.subplot(333), plt.title('namecard3')
+plt.imshow(cv2.cvtColor(src_resized3, cv2.COLOR_BGR2RGB))
+
+plt.subplot(334), plt.title('namecard1'), plt.imshow(src_bin1, cmap='gray')
+plt.subplot(335), plt.title('namecard2'), plt.imshow(src_bin2, cmap='gray')
+plt.subplot(336), plt.title('namecard3'), plt.imshow(src_bin3, cmap='gray')
+
+# histogram 도 확인해보가 otsu 가 threshold 값을 어케 설정했는지 확인해보자
+plt.subplot(337), plt.title('namecard1'), plt.hist(src_gray1.ravel(), bins=256, range=[0, 256])
+plt.subplot(338), plt.title('namecard2'), plt.hist(src_gray2.ravel(), bins=256, range=[0, 256])
+plt.subplot(339), plt.title('namecard3'), plt.hist(src_gray3.ravel(), bins=256, range=[0, 256])
+plt.show()
+
+
+
+
+# 객체 단위 분석 
+
+### 외곽선 검출 
+
+contours, _ = cv2.findContours(
+    src_bin1, 
+    cv2.RETR_EXTERNAL,  # mode
+    cv2.CHAIN_APPROX_NONE, # method
+)
+
+contours
+
+# ↑
+# (array([[[163, 153]], 
+#         [[162, 154]], 
+#         [[161, 155]], 
+#         ...,
+#  ↑ 각각의 객체의 외곽선 정보들이 있다.
+
+# 객체 하나의 외곽선 표현 방법 
+# shape=(K,1,2) dtype=int32 (K 는 외곽선 좌표 개수)   (※ 중간의 1 은 dummy 차원..)
+
+# ppt p14
+
+# 객체의 개수?
+print(len(contours))  # 88개??!?!   (키보드 위의 자잘한 contour 들까지 계산되었을테니..)
+
+# 첫번째 객체의 외곽선
+contours[0].shape
+
+# (686, 1, 2) <--  686 개의 외곽선 좌표가 있다.
+
+# 그 첫번째 좌표값
+contours[0][0]
+
+# 88개의 객체들중 내가 원하는 '명함' 이미지 객체는 어케 찾아내야 함?
+
+지저분한 egde 들을 제거하고, 명함의 사각형을 찾아내는 것입니다
+
+![image.png](attachment:image.png)
+
+
+# '면적' 을 구하거나,   혹은 '와곽선 길이' 로 선택해볼수도 있을것이다.!
+
+#### 일단 외곽선 그려보자
+
+src_temp = src_resized1.copy()
+
+contours, _ = cv2.findContours(
+    src_bin1, 
+    cv2.RETR_EXTERNAL,  # mode
+    cv2.CHAIN_APPROX_NONE, # method
+)
+
+for pts in contours:
+    cv2.polylines(
+        src_temp,   # 영상 위에 바로 그림.
+        pts,
+        True,      # isClosded=True
+        (0, 0, 255),
+    )
+
+plt.figure(figsize=(15, 7))
+plt.imshow(cv2.cvtColor(src_temp, cv2.COLOR_BGR2RGB))
+plt.show()
+
+#### 면적이 특정 크기보다 작은 객체들은 빼기
+
+src_temp = src_resized1.copy()
+
+contours, _ = cv2.findContours(
+    src_bin1, 
+    cv2.RETR_EXTERNAL,  # mode
+    cv2.CHAIN_APPROX_NONE, # method
+)
+
+for pts in contours:
+    
+    # 면적이 1000 보다 작으면 빼기
+    if cv2.contourArea(pts) < 1000: continue    
+    
+    cv2.polylines(
+        src_temp,   # 영상 위에 바로 그림.
+        pts,
+        True,      # isClosded=True
+        (0, 0, 255),
+    )
+
+plt.figure(figsize=(15, 7))
+plt.imshow(cv2.cvtColor(src_temp, cv2.COLOR_BGR2RGB))
+plt.show()
+
+src_temp = src_resized3.copy()
+
+contours, _ = cv2.findContours(
+    src_bin3, 
+    cv2.RETR_EXTERNAL,  # mode
+    cv2.CHAIN_APPROX_NONE, # method
+)
+
+for pts in contours:
+    
+    # 면적이 1000 보다 작으면 빼기
+    if cv2.contourArea(pts) < 1000: continue    
+    
+    cv2.polylines(
+        src_temp,   # 영상 위에 바로 그림.
+        pts,
+        True,      # isClosded=True
+        (0, 0, 255),
+    )
+
+plt.figure(figsize=(15, 15))
+plt.subplot(211), plt.imshow(src_bin3, cmap='gray')
+plt.subplot(212), plt.imshow(cv2.cvtColor(src_temp, cv2.COLOR_BGR2RGB))
+plt.show()
+
+#####  근사화 함수 사용!
+
+src_temp = src_resized3.copy()
+
+contours, _ = cv2.findContours(
+    src_bin3, 
+    cv2.RETR_EXTERNAL,  # mode
+    cv2.CHAIN_APPROX_NONE, # method
+)
+
+for pts in contours:
+    
+    if cv2.contourArea(pts) < 1000: continue    
+        
+    # 근사화 함수    
+    approx = cv2.approxPolyDP(
+        pts,  # curve
+        cv2.arcLength(pts, True) * 0.02,   # epsilon
+        True,  # closed
+    )
+    
+    # 위 결과가 4개의 점으로 근사화 된것이 아니면?  즉 사각형이 아니면 패스
+    if len(approx) != 4: continue
+        
+    print(approx)  # 찍어보자
+    
+    cv2.polylines(
+        src_temp,   # 영상 위에 바로 그림.
+        pts,
+        True,      # isClosded=True
+        (0, 0, 255),
+    )
+
+plt.figure(figsize=(15, 15))
+plt.subplot(211), plt.imshow(src_bin3, cmap='gray')
+plt.subplot(212), plt.imshow(cv2.cvtColor(src_temp, cv2.COLOR_BGR2RGB))
+plt.show()
+
+---
+## 영상의 기하학적 변환
+geometric transformation
+
+찌그러짐, 늘어짐, 비뚤어진 형태를 직사각형 형태로 펴자
+
+![image.png](attachment:image.png)
+
+# 시작하기 앞서 과연 approx 의 점들은 어떤 순서로 들어와있을까?
+# approx. 4개의 위치를 순서대로 출력해보고 확인해보자
+
+
+src_temp = src_resized3.copy()
+
+contours, _ = cv2.findContours(
+    src_bin3, 
+    cv2.RETR_EXTERNAL,  # mode
+    cv2.CHAIN_APPROX_NONE, # method
+)
+
+for pts in contours:
+    
+    if cv2.contourArea(pts) < 1000: continue    
+        
+    # 근사화 함수    
+    approx = cv2.approxPolyDP(
+        pts,  # curve
+        cv2.arcLength(pts, True) * 0.02,   # epsilon
+        True,  # closed
+    )
+    
+    # 위 결과가 4개의 점으로 근사화 된것이 아니면?  즉 사각형이 아니면 패스
+    if len(approx) != 4: continue
+        
+    print(approx)  # 찍어보자
+    print(approx.shape)
+    
+    cv2.polylines(
+        src_temp,   # 영상 위에 바로 그림.
+        pts,
+        True,      # isClosded=True
+        (0, 0, 255),
+    )
+    
+    
+    # approx. 4개의 위치를 '순서'대로 출력해보고 확인
+    for i, corner in enumerate(approx):
+        cv2.circle(src_temp, 
+                  center = corner[0],   # 원의 중심좌표 (x, y)
+                  radius = 10,
+                  color = (255, 0, 0)
+                  )
+        
+        cv2.putText(src_temp,
+                   text = str(i),  # 출력 텍스트
+                    org = corner[0],
+                    fontFace = 2,  # 글꼴 FONT_HERSHEY_DUPLEX / 2
+                    fontScale = 1.2, 
+                    color = (255, 255, 0),
+                   )
+    
+plt.figure(figsize=(15, 15))
+plt.imshow(cv2.cvtColor(src_temp, cv2.COLOR_BGR2RGB))
+plt.show()
+
+src_temp = src_resized3.copy()
+
+contours, _ = cv2.findContours(
+    src_bin3, 
+    cv2.RETR_EXTERNAL,  # mode
+    cv2.CHAIN_APPROX_NONE, # method
+)
+
+for pts in contours:
+    
+    if cv2.contourArea(pts) < 1000: continue    
+        
+    approx = cv2.approxPolyDP(
+        pts,  # curve
+        cv2.arcLength(pts, True) * 0.02,
+        True,  # closed
+    )
+    2
+    if len(approx) != 4: continue
+        
+        # ★
+    # 사실 위의 approx 의 외곽선 점의 순서가 어떤 순서로 되어 있는지 모릅니다... 
+    # 시계방향일지, 반시계 방향일지.
+    # 또한 0번째가 좌상단일지... 아닐지..
+    # 그래서 이는 추가적인 연산이 필요하다.
+    
+    srcQuad = np.array([
+        approx[0, 0], approx[1, 0],
+        approx[2, 0], approx[3, 0],
+    ]).astype(np.float32)
+    
+    w, h = 900, 500   # 명함비율에 맞을?  적절한 사이즈
+    dstQuad = np.array([
+        # approx 의 0, 1, 2, 3번째에 대응하는 point 들 준비
+        # 일단 '수동' 으로 지정해서 확인해보자
+        
+        [w, h], [w, 0],
+        [0, 0], [0, h],
+    ]).astype(np.float32)
+    
+    pers = cv2.getPerspectiveTransform(srcQuad, dstQuad)
+    dst = cv2.warpPerspective(src_temp, pers, (w, h))  # src_temp 를 pers변환행렬을 사용하여 변환. (w, h) 사이즈 형태로 출력
+
+
+plt.figure(figsize=(15, 15))
+plt.subplot(211), plt.imshow(cv2.cvtColor(src_temp, cv2.COLOR_BGR2RGB))
+plt.subplot(212), plt.imshow(cv2.cvtColor(dst, cv2.COLOR_BGR2RGB))
+plt.show()
+
+# 뭔가 명함이 직사각형으로 나오긴 했는데... 문제가 있다
+
+# 1. 아까 언급했던 문제가 있다. 
+# 즉 approx <- 4개의 모서리 좌표의 순서가 어케 될른지 모른다.
+# 위 예제에서는 직접 수동으로 확인하고 수동으로 dstQuad 에 지정해주었다.
+
+# 2. 또한 ... 이미지가 확대되니 뿌옇게 나온다..  글씨를 알아보기 힘들다.
+#  지금은 resize 된 거라 더더욱 그렇다.
+
+### Tesseract 사용해보기
+
+import pytesseract
+
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+dst_rgb = cv2.cvtColor(dst, cv2.COLOR_BGR2RGB)
+print(pytesseract.image_to_string(dst_rgb, lang="Hangul+eng"))
+
+# ※ 참고
+# Tesseract 로 명함인식하려 하면 잘 될때도 있고 그렇지 않을때도 있다..
+# Tesseract 가..  대체로 '긴 문장 (라인)' 을 좀더 잘 인식한다
+# 영문자 한두개, 한글 한두개 읽는 건 인식률이 좀 떨어집니다
+
+## 모서리 정렬 
+
+참고 : Convex (볼록) vs. Concave (오목)
+![](https://thewordcounter.com/wp-content/uploads/2019/12/polygon.png)
+
+# Final
+
+import sys
+import numpy as np
+import cv2
+import pytesseract
+
+def reorderPts(pts):
+    idx = np.lexsort((pts[:, 1], pts[:, 0]))  # 칼럼0 -> 칼럼1 순으로 정렬한 인덱스를 반환
+    pts = pts[idx]  # x좌표로 정렬
+
+    if pts[0, 1] > pts[1, 1]:
+        pts[[0, 1]] = pts[[1, 0]]
+
+    if pts[2, 1] < pts[3, 1]:
+        pts[[2, 3]] = pts[[3, 2]]
+
+    return pts
+    
+
+# 영상 불러오기
+filename = 'namecard2.jpg'
+# if len(sys.argv) > 1:
+#     filename = sys.argv[1]
+
+src = cv2.imread(os.path.join(base_path, filename))
+# src = src3.copy()   # jupyter notebook 사용시
+
+if src is None:
+    print('Image load failed!')
+    sys.exit()
+
+# 출력 영상 설정
+dw, dh = 720, 400
+srcQuad = np.array([[0, 0], [0, 0], [0, 0], [0, 0]], np.float32)
+dstQuad = np.array([[0, 0], [0, dh], [dw, dh], [dw, 0]], np.float32)
+dst = np.zeros((dh, dw), np.uint8)
+
+# 입력 영상 전처리
+src_gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
+th, src_bin = cv2.threshold(src_gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+# 외곽선 검출 및 명함 검출
+contours, _ = cv2.findContours(src_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+for pts in contours:
+    # 너무 작은 객체는 제외
+    if cv2.contourArea(pts) < 1000:
+        continue
+
+    # 외곽선 근사화
+    approx = cv2.approxPolyDP(pts, cv2.arcLength(pts, True)*0.02, True)
+
+    # 컨벡스(볼록)가 아니면 제외
+    if not cv2.isContourConvex(approx) or len(approx) != 4:
+        continue
+
+    print(len(approx))
+
+    cv2.polylines(src, [approx], True, (0, 255, 0), 2, cv2.LINE_AA)
+    srcQuad = reorderPts(approx.reshape(4, 2).astype(np.float32))  # !!
+
+    pers = cv2.getPerspectiveTransform(srcQuad, dstQuad)
+    dst = cv2.warpPerspective(src, pers, (dw, dh), 
+                              flags=cv2.INTER_CUBIC  # 영상 확대/축소등이 발생될때 interpolation 방식
+                                                  # 디폴트는 INTER_LIN (linear) 인데
+                                                  # 좀더 좋은 화질을 위해 INTER_CUBIC 사용
+                                                  # OpenCV 에선 INTER_LANCZOS4 방식도 좋다.
+                             )
+
+    # OCR
+    dst_rgb = cv2.cvtColor(dst, cv2.COLOR_BGR2RGB)
+    print(pytesseract.image_to_string(dst_rgb, lang='Hangul+eng'))
+
+
+# 실제 비교해보면. (jupyter notebook )
+plt.figure(figsize=(15,15))
+plt.subplot(221), plt.imshow(cv2.cvtColor(src, cv2.COLOR_BGR2RGB))
+plt.subplot(222), plt.imshow(src_gray, cmap='gray')
+plt.subplot(223), plt.imshow(src_bin, cmap='gray')
+plt.subplot(224), plt.imshow(cv2.cvtColor(dst, cv2.COLOR_BGR2RGB))
+plt.show()
