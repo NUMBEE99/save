@@ -1,0 +1,177 @@
+# OpenCV + DNN
+
+## classification
+
+import os
+import sys
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+
+base_path = r'D:\DevRoot\dataset\ComputerVision\classify'
+
+# ↓ Google Colab 에서 
+# from google.colab.patches import cv2_imshow  # 이미지를 보여줄 경우 필요
+# from google.colab import files # 파일을 업로드 할때 필요
+
+def cv2_imshow(image):
+    cv2.imshow('image', image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
+def plt_imshow_bgr(bgr_img):
+    cvtImg = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
+    plt.imshow(cvtImg)
+    plt.show()
+
+## GoogLeNet 영상인식
+
+filename = os.path.join(base_path, 'space_shuttle.jpg')
+img = cv2.imread(filename)
+
+if img is None:
+    print('Image load failed!')
+
+img.shape
+
+plt_imshow_bgr(img)
+
+# Load Network
+
+# 네트워크 객체 생성
+# readNet(학습된 모델파일, 모델설명파일)
+
+net = cv2.dnn.readNet(
+    os.path.join(base_path, 'bvlc_googlenet.caffemodel'),
+    os.path.join(base_path, 'deploy.prototxt')
+)
+
+if net.empty():
+    print('Network load failed!')
+    # exit()
+
+!type D:\DevRoot\dataset\ComputerVision\classify\deploy.prototxt
+    
+    
+# name: "GoogNet"
+# input_param { shape: { dim: 10 dim: 3 dim: 224 dim: 224 } }  <- 입력 구성 
+#                                     입력영상 사이즈 224 x 224
+# 중간에 수많은 layer 들
+# 맨 마지막에
+# num_output: 1000  <-  1000 개의 output class
+
+# ※ 제대로 모델 내역을 보려면 위 파일을 배포한 분들의 문서(논문) 들을 참조해야 한다.    
+
+# class 이름 읽어오기
+
+classNames = None
+with open(os.path.join(base_path, 'classification_classes_ILSVRC2012.txt'), 'rt') as f:
+    classNames = f.read().rstrip('\n').split('\n')
+    
+print(len(classNames))  # <-- 1000 개의 클래스
+classNames  
+
+# 입력영상을 블롭(blob) 객체로 만들어 추론(inference) 진행해야 한다.
+
+inputBlob = cv2.dnn.blobFromImage(
+    img,    # BGR 채널을 갖는 영상
+    1,      # scale factor
+    (224, 224),   # 224 x 224 로 스케일링 (모델의 입력사이즈!)
+    (104, 117, 123), # BGR 채널의 평균값을 지정해주어야 한다 
+                    # 왜냐하면 학습할때도 이 평균값으로 학습하였기에 (전처리, rescale! 상기)
+                    # 이 값을 안주면 정확한 학습이 안된다.
+)
+
+# blobFromImage() 의 리턴값이 blob  ← (blob 은 걍 다차원 행렬 이라 보시면 됨.  정확히는 4차원 행렬 (N, C, H, W)   (Number, Channel, Height, Width)
+# 이렇게 리턴된 blob 이 다음의 setInput() 의 입력으로 전달된다.
+
+
+type(inputBlob)
+
+print(inputBlob.shape)
+inputBlob
+
+# ↓ BGR 값이 rescaling 된 것이 보인다.
+
+# 위의 blob 을 네트워크의 '입력'으로 세팅
+
+net.setInput(inputBlob, 
+             'data')  # <- 'data' 는 input layer 의 이름인데.... (지금은 생략해도 무관)
+
+# 추론(inference), (예측하기)
+prob = net.forward()
+
+# 확인
+print(prob.shape)
+print(np.sum(prob))
+
+prob
+
+# 위 결과에서 가장 확률이 큰 값을 가진것을 찾으면 된다
+
+out = prob.flatten()
+classId = np.argmax(out)
+confidence = out[classId]
+
+print(classId, confidence, classNames[classId])
+
+text = '%s (%4.2f%%)' % (classNames[classId], confidence * 100)
+cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 1, cv2.LINE_AA)
+
+plt_imshow_bgr(img)
+
+#### 완성본 classify.py
+
+import sys, os
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+
+base_path = r'D:\DevRoot\dataset\ComputerVision\classify'
+
+filename = os.path.join(base_path, 'space_shuttle.jpg')
+
+if len(sys.argv) > 1:
+    filename = sys.argv[1]
+
+img = cv2.imread(filename)
+
+if img is None:
+    filename = os.path.join(base_path, sys.argv[1])
+    exit()
+
+# Load network
+
+net = cv2.dnn.readNet(
+    os.path.join(base_path, 'bvlc_googlenet.caffemodel'), 
+    os.path.join(base_path, 'deploy.prototxt'))
+
+if net.empty():
+    print('Network load failed!')
+    exit()
+
+# Load class names
+
+classNames = None
+with open(os.path.join(base_path, 'classification_classes_ILSVRC2012.txt'), 'rt') as f:
+    classNames = f.read().rstrip('\n').split('\n')
+
+# Inference
+
+inputBlob = cv2.dnn.blobFromImage(img, 1, (224, 224), (104, 117, 123))
+net.setInput(inputBlob, 'data')
+prob = net.forward()
+
+# Check results & Display
+
+out = prob.flatten()
+classId = np.argmax(out)
+confidence = out[classId]
+
+text = '%s (%4.2f%%)' % (classNames[classId], confidence * 100)
+cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 1, cv2.LINE_AA)
+
+cv2.imshow('img', img)
+cv2.waitKey()
+cv2.destroyAllWindows()
