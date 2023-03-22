@@ -1,0 +1,270 @@
+# 이미지 처리
+Image Processing
+
+import os
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+
+base_path = r'D:\DevRoot\dataset\ComputerVision\01'
+
+# ↓ Google Colab 에서 
+# from google.colab.patches import cv2_imshow  # 이미지를 보여줄 경우 필요
+# from google.colab import files # 파일을 업로드 할때 필요
+
+def cv2_imshow(image):
+    cv2.imshow('image', image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
+def plt_imshow_bgr(bgr_img):
+    cvtImg = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
+    plt.imshow(cvtImg)
+    plt.show()
+
+# 이미지 처리 (Image Processing)
+
+- 필요에 따라 적절한 처리 
+
+- `resize()`, `flip()`, `getAffineTransform()`, `warpAffine()` 등 다양한 메서드 존재
+
+## Resize
+
+- `cv2.resize()`
+  - 사이즈가 변하면 pixel사이의 값을 결정을 해야함
+  
+  - 보간법(Interpolation method)
+    - 사이즈를 줄일 때 : `cv2.INTER_AREA` 
+    
+    - 사이즈를 크게 할 때 : `cv2.INTER_CUBIC` , `cv2.INTER_LINEAR`
+
+  - `Parameters`
+    - `img` : Image
+
+    - `dsize` : Manual Size. 가로, 세로 형태의 tuple(ex; (100,200))
+
+    - `fx` : 가로 사이즈의 배수. 2배로 크게하려면 2. 반으로 줄이려면 0.5
+
+    - `fy` : 세로 사이즈의 배수
+
+    - `interpolation` : 보간법
+
+image = cv2.imread(os.path.join(base_path, 'Lenna.png'))
+image.shape
+
+cv2_imshow(image)
+
+height, width = image.shape[:2]
+height, width
+
+# 1/2 로 줄이기
+shrink = cv2.resize(image, dsize=None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+
+# x 2 늘리기
+expand1 = cv2.resize(image, dsize=(width*2, height*2), interpolation=cv2.INTER_CUBIC)
+
+expand2 = cv2.resize(image, dsize=None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+
+
+plt_imshow_bgr(image)
+
+plt_imshow_bgr(shrink)
+
+plt_imshow_bgr(expand1)
+
+plt_imshow_bgr(expand2)
+
+shrink.shape
+
+expand1.shape
+
+## Translation
+
+- 이미지의 '위치'를 변경
+
+- `cv2.warpAffine()`
+
+  - `Parameters` 
+    - `src` : Image
+    
+    - `M` : 변환 행렬
+
+    - `dsize` (tuple) : output image size(ex; (width=columns, height=rows)
+
+
+rows, cols = image.shape[:2]
+rows, cols
+
+# 변환행렬 준비
+M = np.float32([
+    [1, 0, 10],      # x 축으로 10 이동
+    [0, 1, 20],      # y 축으로 20 이동
+])
+
+dst = cv2.warpAffine(image, M, dsize=(cols, rows)) 
+
+plt_imshow_bgr(dst)
+
+## Rotate
+
+- 물체를 평면상의 한 점을 중심으로 𝜃 만큼 회전하는 변환
+
+- 양(+)의 각도는 시계반대방향으로 회전
+
+- `cv2.getRotationMatrix2D()`
+  
+  - `Parameters`  	
+
+    - `center` : 이미지의 중심 좌표
+    
+    - `angle` : 회전 각도
+
+    - `scale` : scale factor
+  - `Return`
+    -  변환행렬
+
+image.shape
+
+# 이미지의 '중심' 을 기준으로 60도 회전
+M = cv2.getRotationMatrix2D((cols/2, rows/2), 60, 0.5)
+M
+
+dst = cv2.warpAffine(image, M, (cols, rows))
+
+plt_imshow_bgr(dst)
+
+## Flip
+
+- 대칭 변환
+  - 좌우 대칭 (좌우 반전)
+
+  - 상하 대칭 (상하 반전)
+
+- 입력 영상과 출력 영상의 픽셀이 1:1 매칭이므로 보간법이 필요 없음
+
+- `cv2.flip()`
+
+  - Parameters
+
+    - `src` : 입력 영상
+
+    - `flipCode` : 대칭 방법을 결정하는 flag 인자
+
+      - 양수이면 좌우 대칭
+
+      - 0이면 상하 대칭
+
+      - 음수이면 상하, 좌우 대칭을 모두 실행
+
+image.shape
+
+result1 = cv2.flip(image, flipCode=1)  # 양수 : 좌우대칭
+
+plt_imshow_bgr(result1)
+
+plt_imshow_bgr(image)  # 원본 안바뀜!
+
+result2 = cv2.flip(image, 0)  # 0 상하 flip
+
+plt_imshow_bgr(result2)
+
+result3 = cv2.flip(image, -1)  # 음수 : 상하좌우 flips
+plt_imshow_bgr(result3)
+
+## Affine Transformation
+
+- 선의 평행선은 유지되면서 이미지를 변환하는 작업
+
+- 이동, 확대, Scale, 반전까지 포함된 변환
+
+- `cv2.getAffineTransform()`
+
+  - Affine 변환을 위해서는 3개의 Match가 되는 점이 있으면 변환행렬을 구할 수 있음
+
+# 3개의 점 준비
+pts1 = np.float32([[200, 100], [400, 100], [200, 200]])
+pts2 = np.float32([[200, 300], [400, 200], [200, 400]])
+
+cv2.circle(image, center=(200, 100), radius=10, 
+           color=(255,0,0),  # 파란점 color=(B,G,R)
+           thickness=-1,    # -1, 동그라미 안이 채워짐
+          )  
+
+cv2.circle(image, (400, 100), 10, (0, 255, 0), -1)  # 초록색 점
+cv2.circle(image, (200, 200), 10, (0, 0, 255), -1)  # 빨간색 점
+None
+
+plt_imshow_bgr(image)
+
+M = cv2.getAffineTransform(pts1, pts2)
+M
+
+dst = cv2.warpAffine(image, M, (cols, rows))
+
+plt_imshow_bgr(dst)
+
+plt.subplot(121), plt.imshow(image[:, :, ::-1]), plt.title('Image')
+plt.subplot(122), plt.imshow(dst[:, :, ::-1]), plt.title('Affine')
+plt.show()
+
+## Perspective Transformation
+
+- Perspective(원근법) 변환
+
+- 직선의 성질만 유지, 선의 평행성은 유지가 되지 않는 변환
+
+- 기차길은 서로 평행하지만 원근변환을 거치면 평행성은 유지 되지 못하고 하나의 점에서 만나는 것 처럼 보임 (반대의 변환도 가능)
+
+- 4개의 Point의 Input값과 이동할 output Point 가 필요
+
+- `cv2.getPerspectiveTransform()`가 필요하며, `cv2.warpPerspective()` 함수에 변환행렬값을 적용하여 최종 결과 이미지를 얻을 수 있음
+
+train = cv2.imread(os.path.join(base_path, 'train.jpg'))
+train.shape
+
+plt_imshow_bgr(train)
+
+top_left = (130, 300)
+top_right = (270, 300)
+bottom_right = (400, 550)
+bottom_left = (30, 550)
+
+pts1 = np.float32([top_left, top_right, 
+                  bottom_right, bottom_left])
+
+# width, height 값 계산
+
+w1 = abs(bottom_right[0] - bottom_left[0])
+w2 = abs(top_right[0] - top_left[0])
+h1 = abs(top_right[1] - bottom_right[1])
+h2 = abs(top_left[1] - bottom_left[1])
+
+max_width = max([w1, w2])
+max_height = max([h1, h2])
+
+pts2 = np.float32([[0, 0], 
+                  [max_width-1, 0], 
+                  [max_width-1, max_height-1], 
+                  [0, max_height-1]])
+
+# 4군데 점 찍어 놓기
+cv2.circle(train, top_left, 10, (255, 0, 0), -1)
+cv2.circle(train, top_right, 10, (0, 255, 0), -1)
+cv2.circle(train, bottom_right, 10, (0, 0, 255), -1)
+cv2.circle(train, bottom_left, 10, (0, 0, 0), -1)
+None
+
+plt_imshow_bgr(train)
+
+M = cv2.getPerspectiveTransform(pts1, pts2)
+
+M
+
+dst = cv2.warpPerspective(train, M, (max_width, max_height))
+
+plt_imshow_bgr(dst)
+
+plt.subplot(121), plt.imshow(train[:, :, ::-1]), plt.title('Image')
+plt.subplot(122), plt.imshow(dst[:, :, ::-1]), plt.title('Perspective')
+plt.show()
