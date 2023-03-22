@@ -1,0 +1,264 @@
+# 의도 분류 모델
+
+챗봇 엔진에 화자의 질의가 입력되었을때 전처리 과정을 거친 후 해당 문장의 '의도' 를 분류합니다.
+
+
+# 단어 시퀀스 벡터 크기
+MAX_SEQ_LEN = 15
+
+
+def GlobalParams():
+    global MAX_SEQ_LEN
+
+### 의도 분류 모델 학습
+
+학습데이터셋: **/models/intent/total_train_data.csv**
+- 음식점 주문과 예약을 위한 챗봇에 특화되어 있으며, 
+- 클래스별 샘플 텍스트가 다양하지 않아 특정 의도 클래스의 경우 예측 품질이 떨어질수 있다
+
+# 필요한 모듈 임포트
+import pandas as pd
+import tensorflow as tf
+from tensorflow.keras import preprocessing
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Embedding, Dense, Dropout, Conv1D, GlobalMaxPool1D, concatenate
+import os
+
+# ① 데이터 읽어오기
+train_file = os.path.join('chatbot/models/intent', "total_train_data.csv")
+data = pd.read_csv(train_file, delimiter=',')
+data
+
+# 주문 (2) 에 대한 문장
+data[data['intent'] == 2]
+
+# 주문 (3) 에 대한 문장
+data[data['intent'] == 3]
+
+# '질문(query)' 와 '의도(intent)' 
+queries = data['query'].tolist()  
+intents = data['intent'].tolist()
+
+# 전처리 모듈 불러오기
+from chatbot.utils.Preprocess import Preprocess
+p = Preprocess(word2index_dic=os.path.join('chatbot/train_tools/dict', 'chatbot_dict.bin'),
+               userdic=os.path.join('chatbot/utils', 'user_dic.tsv'))
+
+# 단어 시퀀스 생성 (가장 시간 많이 걸림)
+# 해당 단어에 매칭되는 번호로 시퀀스 생성
+
+# ★ 시간 제법 걸림 * 몇십초 정도..
+
+sequences = []
+for sentence in queries:
+    pos = p.pos(sentence)
+    keywords = p.get_keywords(pos, without_tag=True)
+    seq = p.get_wordidx_sequence(keywords)
+    sequences.append(seq)
+
+# 결과 비교
+queries[:10]
+
+sequences[:10]
+
+# ② 단어 인덱스 시퀀스 벡터 
+# 단어 시퀀스 벡터 크기 (MAX_SEQ_LEN 로 동일하게 맞추기, 패딩처리)
+# from config.GlobalParams import MAX_SEQ_LEN
+padded_seqs = preprocessing.sequence.pad_sequences(sequences, maxlen=MAX_SEQ_LEN, padding='post')
+
+# (105658, 15)
+print(padded_seqs.shape)
+print(len(intents)) #105658
+
+
+padded_seqs[:10]
+
+# ③ 학습용, 검증용, 테스트용 데이터셋 생성
+ds = tf.data.Dataset.from_tensor_slices((padded_seqs, intents)) # 패딩처리된 시퀀스와 의도(intent) 리스트 전체를 데이터셋 객체로
+ds = ds.shuffle(len(queries)) # 랜덤 섞기
+
+# 학습셋:검증셋:테스트셋 = 7:2:1
+train_size = int(len(padded_seqs) * 0.7)
+val_size = int(len(padded_seqs) * 0.2)
+test_size = int(len(padded_seqs) * 0.1)
+
+train_ds = ds.take(train_size).batch(20)
+val_ds = ds.skip(train_size).take(val_size).batch(20)
+test_ds = ds.skip(train_size + val_size).take(test_size).batch(20)
+
+# 하이퍼 파라미터 설정
+dropout_prob = 0.5
+EMB_SIZE = 128
+EPOCH = 5
+VOCAB_SIZE = len(p.word_index) + 1 #전체 단어 개수
+
+
+# ④ CNN 모델 정의
+# keras 함수형 모델 방식으로 구현
+input_layer = Input(shape=(MAX_SEQ_LEN,))  # 입려크기
+embedding_layer = Embedding(VOCAB_SIZE, EMB_SIZE, input_length=MAX_SEQ_LEN)(input_layer)
+dropout_emb = Dropout(rate=dropout_prob)(embedding_layer)
+
+conv1 = Conv1D(
+    filters=128,
+    kernel_size=3,
+    padding='valid',
+    activation=tf.nn.relu)(dropout_emb)
+pool1 = GlobalMaxPool1D()(conv1)
+
+conv2 = Conv1D(
+    filters=128,
+    kernel_size=4,
+    padding='valid',
+    activation=tf.nn.relu)(dropout_emb)
+pool2 = GlobalMaxPool1D()(conv2)
+
+conv3 = Conv1D(
+    filters=128,
+    kernel_size=5,
+    padding='valid',
+    activation=tf.nn.relu)(dropout_emb)
+pool3 = GlobalMaxPool1D()(conv3)
+
+# 3,4,5gram 이후 합치기
+concat = concatenate([pool1, pool2, pool3])
+
+hidden = Dense(128, activation=tf.nn.relu)(concat)
+dropout_hidden = Dropout(rate=dropout_prob)(hidden)
+logits = Dense(5, name='logits')(dropout_hidden)  # 최종적으로 5가지 의도 클래스를 분류. 결과로 나온 값(logits) 을을 점수(score) 라 부른다
+predictions = Dense(5, activation=tf.nn.softmax)(logits)
+
+
+# ⑤ 모델 생성 
+model = Model(inputs=input_layer, outputs=predictions)
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+
+# ⑥ 모델 학습
+
+# ★ 시간 걸림 ★  
+model.fit(train_ds, validation_data=val_ds, epochs=EPOCH, verbose=1)
+
+# ⑦ 모델 평가(테스트 데이터 셋 이용)
+loss, accuracy = model.evaluate(test_ds, verbose=1)
+print('Accuracy: %f' % (accuracy * 100))
+print('loss: %f' % (loss))
+
+# ⑧ 모델 저장
+model.save(os.path.join('chatbot/models/intent','intent_model.h5'))
+
+
+
+## 의도분류 모듈 생성
+
+**의도 분류 모듈** 은 앞서 작성한 '의도분류모델' 파일을 활용하여, 입력되는 텍스트의 의도 클래스를 예측하는 기능
+
+**/models/intent/IntentModel.py** 생성
+
+import tensorflow as tf
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras import preprocessing
+
+
+# 의도 분류 모델 모듈
+class IntentModel:
+    def __init__(self, model_name, preprocess):
+
+        # 의도 클래스 별 레이블
+        self.labels = {0: "인사", 1: "욕설", 2: "주문", 3: "예약", 4: "기타"}
+
+        # 의도 분류 모델 불러오기
+        self.model = load_model(model_name)
+
+        # 챗봇 Preprocess 객체
+        self.p = preprocess
+
+
+    # 의도 클래스 예측
+    def predict_class(self, query):
+        # 형태소 분석
+        pos = self.p.pos(query)
+
+        # 문장내 키워드 추출(불용어 제거)
+        keywords = self.p.get_keywords(pos, without_tag=True)
+        sequences = [self.p.get_wordidx_sequence(keywords)]
+
+        # 단어 시퀀스 벡터 크기
+#         from config.GlobalParams import MAX_SEQ_LEN
+        MAX_SEQ_LEN = 15
+
+        # 패딩처리
+        padded_seqs = preprocessing.sequence.pad_sequences(sequences, maxlen=MAX_SEQ_LEN, padding='post')
+
+        predict = self.model.predict(padded_seqs)
+        predict_class = tf.math.argmax(predict, axis=1)
+        return predict_class.numpy()[0]
+
+
+
+
+## 의도분류 모델 사용 테스트
+
+from chatbot.utils.Preprocess import Preprocess
+from chatbot.models.intent.IntentModel import IntentModel
+import os
+
+p = Preprocess(word2index_dic=os.path.join('chatbot/train_tools/dict', 'chatbot_dict.bin'),
+               userdic=os.path.join('chatbot/utils', 'user_dic.tsv'))
+
+
+intent = IntentModel(model_name=os.path.join('chatbot/models/intent','intent_model.h5'), preprocess=p)
+
+query = "오늘 탕수육 주문 가능한가요?"
+predict = intent.predict_class(query)
+predict_label = intent.labels[predict]
+
+print(query)
+print("의도 예측 클래스 : ", predict)
+print("의도 예측 레이블 : ", predict_label)
+
+
+query = "오늘 날씨가 좋네요"
+predict = intent.predict_class(query)
+predict_label = intent.labels[predict]
+
+print(query)
+print("의도 예측 클래스 : ", predict)
+print("의도 예측 레이블 : ", predict_label)
+
+
+query = "오늘 2시에 10명 예약 가능하가요"
+predict = intent.predict_class(query)
+predict_label = intent.labels[predict]
+
+print(query)
+print("의도 예측 클래스 : ", predict)
+print("의도 예측 레이블 : ", predict_label)
+
+
+query = "야 이 화상아"
+predict = intent.predict_class(query)
+predict_label = intent.labels[predict]
+
+print(query)
+print("의도 예측 클래스 : ", predict)
+print("의도 예측 레이블 : ", predict_label)
+
+
+query = "화상아"
+predict = intent.predict_class(query)
+predict_label = intent.labels[predict]
+
+print(query)
+print("의도 예측 클래스 : ", predict)
+print("의도 예측 레이블 : ", predict_label)
+
+query = "화상이 이아"
+predict = intent.predict_class(query)
+predict_label = intent.labels[predict]
+
+print(query)
+print("의도 예측 클래스 : ", predict)
+print("의도 예측 레이블 : ", predict_label)
