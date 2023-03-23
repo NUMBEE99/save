@@ -1,0 +1,387 @@
+# 은행 고객 데이터 분석
+### 데이터 출처 : UCI Machine Learning Repository
+
+[링크주소 및 다운로드]https://archive.ics.uci.edu/ml/datasets/bank+marketing
+<br>
+
+#### Moro, S., Cortez, P., & Rita, P. (2014). A data-driven approach to predict the success of bank telemarketing. Decision Support Systems, 62, 22-31
+
+# 위 링크 -->  상단 [Data Folder]  --> bank-additional.zip 다운로드
+# 그 안에서 bank-additional-full.csv  (가장 용량큰 파일) 을 압축 풀어서 예제에서 사용하겠습니다.
+
+# <예제 데이터 소개>
+- 해외의 은행이 진행한 마케팅 데이터
+- 아웃바운드 텔레마케팅으로 마케팅 캠페인을 진행
+- 아래의 5가지 (21개 컬럼) 으로 구성됨
+
+# ,csv  파일을 열어보자
+
+# bank client data:  은행고객 데이터
+
+나이, 직업, 결혼여부, 교육수준, 파산여부, 주택대출여부, 개인대출여부
+
+1 - age (numeric)<br>
+2 - job : type of job (categorical: 'admin.','blue-collar','entrepreneur','housemaid','management','retired','self-employed','services','student','technician','unemployed','unknown')<br>
+3 - marital : marital status (categorical: 'divorced','married','single','unknown'; note: 'divorced' means divorced or widowed)<br>
+4 - education (categorical: 'basic.4y','basic.6y','basic.9y','high.school','illiterate','professional.course','university.degree','unknown')<br>
+5 - default: has credit in default? (categorical: 'no','yes','unknown')<br>
+6 - housing: has housing loan? (categorical: 'no','yes','unknown')<br>
+7 - loan: has personal loan? (categorical: 'no','yes','unknown')<br>
+
+# related with the last contact of the current campaign:
+
+캠페인의 마지막 컨택 관련 데이터
+
+컨택한기기 타입 / 컨택한 월 / 컨택한 요일 / 통화시간
+
+
+8 - contact: contact communication type (categorical: 'cellular','telephone') <br>
+9 - month: last contact month of year (categorical: 'jan', 'feb', 'mar', ..., 'nov', 'dec')<br>
+10 - day_of_week: last contact day of the week (categorical: 'mon','tue','wed','thu','fri')<br>
+11 - duration: last contact duration, in seconds (numeric). <br>
+# other attributes:
+
+이번 캠페인에서 몇번이나 컨택 되었는지 / 이후 몇일 지났는지 / 이전 캠페인에서 몇번이나 컨택되었는지 / 
+
+
+12 - campaign: number of contacts performed during this campaign and for this client (numeric, includes last contact)<br>
+13 - pdays: number of days that passed by after the client was last contacted from a previous campaign (numeric; 999 means client was not previously contacted)<br>
+14 - previous: number of contacts performed before this campaign and for this client (numeric)<br>
+15 - poutcome: outcome of the previous marketing campaign (categorical: 'failure','nonexistent','success')<br>
+# social and economic context attributes
+
+사회 경제적 속성 데이터
+
+고용변동률 , 소비자물가지수, 소비자신뢰지수, 유리보3개월금리, 취업자수
+
+
+16 - emp.var.rate: employment variation rate - quarterly indicator (numeric)<br>
+17 - cons.price.idx: consumer price index - monthly indicator (numeric) <br>
+18 - cons.conf.idx: consumer confidence index - monthly indicator (numeric) <br>
+19 - euribor3m: euribor 3 month rate - daily indicator (numeric)<br>
+20 - nr.employed: number of employees - quarterly indicator (numeric)<br>
+
+# Output variable:
+
+은행상품 가입여부
+
+21 - y - has the client subscribed a term deposit? (binary: 'yes','no')<br>
+
+
+
+import pandas as pd
+from pandas import Series
+from pandas import DataFrame
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+
+# matplotlib 한글 폰트 출력코드
+# 출처 : 데이터공방( https://kiddwannabe.blog.me)
+
+import matplotlib
+from matplotlib import font_manager, rc
+import platform
+
+try : 
+    if platform.system() == 'Windows':
+    # 윈도우인 경우
+        font_name = font_manager.FontProperties(fname="c:/Windows/Fonts/malgun.ttf").get_name()
+        rc('font', family=font_name)
+    else:    
+    # Mac 인 경우
+        rc('font', family='AppleGothic')
+except : 
+    pass
+matplotlib.rcParams['axes.unicode_minus'] = False   
+
+# 1. 데이터불러오기
+1. 파일명 : bank-additional-full.csv
+1. csv 파일을 읽어와서 df 변수에 담고, 상위 5개 모양을 확인해보세요
+    - hint : **sep=** 옵션을 주어야 제대로 읽어오게 될겁니다.    
+
+[예시]
+![image.png](attachment:image.png)
+
+# TODO : csv 파일을 읽어와서 df 변수에 담으세요
+df = pd.read_csv(r'C:\DevRoot\DataSet\bank-additional-full.csv',
+                sep=";")
+
+df.head()
+
+
+
+# 2. 데이터 탐색하기
+1. 기본적인 EDA 를 수행하세요
+    - head, tail, shape, 
+    - 결측치, 기술통계량
+    - 분류형 데이터의 경우 열의 고유값, 고유값 빈도 등도 확인하세요
+
+df.head()
+
+df.tail()
+
+df.shape
+
+df.info() # null 값 데이터는 없다.
+
+
+# 나이, 통화시간(초), 캠페인 컨택수, 마지막 컨택이후 몇일이나 지났는지, 이전 캠페인에서 몇번 컨택 되었는지,
+# 고용변동률 , 소비자물가지수, 소비자신뢰지수, 유리보3개월금리, 취업자수
+'''
+나이는 17세부터 98세까지 다양하며 평균 40살이다.
+통화시간(초)은 평균 258초이며 통화한적이 없는 0초부터 가장 오래한 4918초가 있다.
+캠페인 컨택 수는 최소1부터 56까지 있으며 평균 2.5번이다.
+마지막 컨택 이후 몇일이나 지났는지를 보면 25% 이후의 값들이 다 999인 것으로 보아 999가 매우 많다는 것을 
+알 수 있다. 999는 전에 컨택하지 않았음을 의미한다. 어떤 분포로 되어있는지 궁금해서 밑에 셀에 출력해보았다.
+이전 캠페인에서 몇번 컨택 되었는지를 보면 대부분 0의 값을 가지고 최대 7번의 접촉이 있었다.
+고용변동률을 보면 최소 -3.4와 최대 1.4의 변동률을 가지고 있으며 평균 0.1에 가까운 변동률을 가지고 있다
+소비자 물가지수, 소비자신뢰지수, 유리보3개월금리, 취업자수 등은 눈으로 확인하였다.
+'''
+df.describe() 
+
+df.groupby('pdays').size()
+
+# 데이터 시각화
+
+1. 현업 데이터를 사용하여 데이터 시각화 진행
+1. 데이터를 가공, 처리하여 시각화 진행
+
+# 3_1. 나이(age) 오름차순으로 시각화 하기
+- 총 41188 명의 age 가 있다.  이를 시각화하여 age 분포를 확인해보자
+- 결과에 대한 인사이트는 별도의 메모에 남겨보세요
+
+![image.png](attachment:image.png)
+
+plt.plot(np.arange(0,len(df['age'])), df['age'].sort_values(), label="age")
+plt.rc('xtick', labelsize=10)  # x축 눈금 폰트 크기 
+plt.rc('ytick', labelsize=10)
+plt.legend()
+'''
+약 25살부터 약 58살까지 완만하게 증가하는거로 보아 대부분의 연령층은 25~58 살이다.  
+'''
+
+
+
+# 3_2. 나이(age) 구간별, 분포형태 시각화하기
+- 나이대별 히스토그램을 시각화하기
+
+[예시]
+![image.png](attachment:image.png)
+
+plt.hist(df['age'].sort_values())
+plt.xlabel('age')
+plt.ylabel('Frequency')
+plt.title('Histogram of df.age')
+'''
+히스토그램을 보면 대략 35살부터 41살이 가장 많은 사람의 수를 보유하고 있다.
+'''
+
+# 3_3. 통화시간(dutation) 분포 확인하기
+- 통화시간(duration) 을 histogram 시각화 하여 분포 확인하기
+- 오름차순 정렬
+- duration 의 범위값을 반영하여 histogram 의 bins 옵션을 주기 (100 단위로 구간 설정)
+
+![image.png](attachment:image.png)
+
+plt.figure(figsize=(20,10))
+plt.rc('xtick', labelsize=20)  # x축 눈금 폰트 크기 
+plt.rc('ytick', labelsize=20)
+plt.hist(df['duration'].sort_values(), bins=100)
+plt.xlabel('통화시간(duration)')
+plt.ylabel('Frequency')
+plt.title('Histogram of df.duration')
+
+'''
+대략 200초에서 250초 사이에 분포가 가장 많이 보인다.
+'''
+
+df
+
+# 4_1. 결혼 여부에 따른 통계
+- 결혼여부 (maritaL) 시각화 하기
+
+[예시]
+![image.png](attachment:image.png)
+
+df.groupby('marital').size().sort_values(ascending=False).plot(kind='bar')
+'''
+결혼한 사람이 가장 많았고, unknwon을 제외한 사별 or 이혼한 사람이 제일 적었다.
+'''
+
+
+
+# 4_2. 교육수준에 따른 통계
+- 교육수준 (education) 에 따른 분포 시각화 하기
+
+[예시]
+![image.png](attachment:image.png)
+
+plt.figure(figsize=(20,10))
+plt.rc('xtick', labelsize=20)  # x축 눈금 폰트 크기 
+plt.rc('ytick', labelsize=20)
+df.groupby('education').size().sort_values(ascending=False).plot(kind='barh')
+
+'''
+대학 졸업이 가장 많은 수를 차지하고 있으며 illiterate(읽고 쓸줄 모르는)도 아주 조금 존재한다.
+'''
+
+
+
+----
+# 데이터 분석
+
+## 분석주제 1 :
+### 가설 : "대출이 있는 사람이라면 은행 상품에 잘 가입하지 않을 것이다."
+
+> 충분히 위와 같은 생각을 해볼수 있다. 그러나 이것은 '생각' '감' 이다.  이러한 가설을 '데이터' 적으로 검증하고 코딩으로 확인 가능할까?
+
+- 분석을 위한 코딩과정 도식화
+ 1. **가입여부(y)** 에 따라 가입한 그룹과 가입하지 않은 그룹으로 나눈다.
+ 2. 나뉜 데이터를 **대출여부(loan)**에 따라 나눈다.
+ 3. **'가입한 그룹 중 대출이 있는 사람의 비중'** 과, **'가입하지 않은 그룹 중 대출이 있는 사람의 비중'** 을 비교한다.
+ 
+ <br><br>
+
+
+![image.png](attachment:image.png)
+
+# 5_1. 가입여부('y') 에 따라 그룹 나누기
+- 가입한 그룹은 yes_group 에 저장하고 확인하기
+- 가입하지 않은 그룹은 no_group에 저장하고 확인하기
+
+[예시]
+![image.png](attachment:image.png)
+
+yes_group = df.groupby('y').get_group('yes')
+no_group = df.groupby('y').get_group('no')
+
+yes_group
+
+no_group
+
+yes_ratio = (yes_group.groupby('loan').size() / len(yes_group)).sort_values(ascending=False)  
+# 해당 상품에 가입한 유저들의 대출 유무 분포
+yes_ratio
+
+no_ratio = (no_group.groupby('loan').size() / len(no_group)).sort_values(ascending=False) 
+# 해당 상품에 가입하지 않은 유저들의 대출 유무 분포
+no_ratio
+
+# 5_2 가설 검증하기
+- 위에서 나뉜 은행상품가입자 와 은행상품 비가입자 의 대출여부 (loan) 의 '비율'을 분석하여 결과를 예시와 같은 DataFrame 으로 작성하세요
+- 위 분석 결과에 따라 가설검증을 별도의 셀에 작성하세요 (주석으로 남기세요)
+
+[결과예시]
+![image.png](attachment:image.png)
+
+result = pd.concat([yes_ratio, no_ratio], axis=1)
+index_match = {'no':"대출없음", 'yes': "대출있음", 'unknown': "미확인"}
+result.index = [index_match[i] for i in result.index]
+result.columns = ['은행상품가입자', '은행상품 비가입자']
+result
+
+'''
+가설 : "대출이 있는 사람이라면 은행 상품에 잘 가입하지 않을 것이다." 라는 가설은 틀렸다고 볼 수 있다.
+은행상품 가입자 중 대출있는 사람의 비율과 비가입자 중 대출있는 사람의 비율이 비슷하기 때문이다.
+이 가설이 맞기 위해서는 은행상품 비가입자중 대출있는 사람의 비율이 어느정도 높아야 한다.
+'''
+
+
+
+
+
+---
+# 분석주제 2 :
+### 같은 상품을 새로운 고객에게 마케팅 하려고한다. 
+### 연령(age)과 상품가입여부(y), 직업(job)을 함께 고려할때 마케팅 전략을 변화시켜야 할 그룹은?
+
+- 목표 : 
+ 1. 가설검증과정 코딩 실습하기
+ 2. pivot_table활용한 실습 진행하기
+ 
+ 
+- 분석조건 : 세 개의 칼럼(age, job, y)을 함께 분석해야 함  
+
+"""
+pd.pivot_table(
+    data,        ← 데이터프레임 변수      
+    values=None,  ← 집계대상 칼럼 (수치데이터)
+    index=None,    ← 행 인덱스가 될 칼럼명
+    columns=None,  ← 열 인덱스가 될 칼럼명
+    aggfunc='mean',  ← 집계함수-sum,mean,min,max,std,var
+    fill_value=None,     ← 결측치를 다른 값으로 채우기
+    margins=False,
+    dropna=True,
+    margins_name='All',
+    observed=False,
+) -> 'DataFrame'
+"""
+None
+
+
+
+
+# 6_1. 은행상품 가입여부 (‘y’) 에 따른 직업(job)별  ‘평균’ 나이(age) 를 pivot table 로 작성해보세요
+- 작성한 pivot table (은) pivot 이라는 변수에 담아두세요
+
+[예시]
+![image.png](attachment:image.png)
+
+# TODO
+grouped = df.groupby(['y', 'job']).mean()['age']
+pivot = grouped.reset_index().pivot(index='y', columns='job', values='age')
+pivot
+
+# 6_2. 평균연령의 차이 분석해보기
+1. 위 결과 (pivot) 에서 
+    - **평균연령차 : 은행상품 가입자 평균연령 - 비가입자 평균연령**
+    - 위 평균연령 차를 계산하여 새로운 row 추가하기 (새 인덱스 : **diff**)
+1. diff 순으로 내림차순 정렬하기
+1. 분석결과를 result 변수에 담기 (DataFrame)
+1. 분석결과에 기반하여 마케팅 을 집중해야 할 그룹에 대한 견해를 별도의 셀에 남겨보세요
+
+[예시]
+![image.png](attachment:image.png)
+
+pivot.loc['diff'] = (pivot.loc['yes'] - pivot.loc['no'])
+result = pivot.transpose().sort_values(by="diff", ascending=False).transpose()
+result
+
+
+
+# 6_3. 위 분석결과 시각화 하기 
+
+[예시]
+![image.png](attachment:image.png)
+
+plt.figure(figsize=(20,10))
+plt.xlabel('job', fontsize=20)
+plt.ylabel('diff', fontsize=20)
+plt.rc('xtick', labelsize=20)  # x축 눈금 폰트 크기 
+plt.rc('ytick', labelsize=20)
+result.transpose()['diff'].plot(kind='bar')
+
+
+# 분석주제 2 :¶
+# 같은 상품을 새로운 고객에게 마케팅 하려고한다.
+# 연령(age)과 상품가입여부(y), 직업(job)을 함께 고려할때 마케팅 전략을 변화시켜야 할 그룹은?
+# 분석결과에 기반하여 마케팅 을 집중해야 할 그룹에 대한 견해를 별도의 셀에 남겨보세요
+
+'''
+평균연령차가 제일 많이 나는 retired(은퇴한) 그룹을 보자.
+상품에 가입한 평균연령대가 68살, 가입 하지 않은 평균연령대 59살이다.
+68살 근처에 나이 때는 지금 마케팅으로도 어느 정도 가입을 유도할 수 있다.
+그러므로 59살 연령대에 맞는 새로운 마케팅 전략을 펼쳐 평균연령차를 줄이는 것을 목적으로 진행해야 한다.
+housemaid(하녀)의 그룹도 마찬가지다. 
+이와 달리, 평균연령차 2 근처인 그룹들은 현재 하고있는 마케팅을 유지해도 좋다고 생각한다.
+'''
+
+
+
+
+
+
+
+
+
